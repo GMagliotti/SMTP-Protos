@@ -9,9 +9,9 @@
 # -std=c11			: Use C11
 # -D_POSIX_C_SOURCE=200112L 	: Posix version
 
-CFLAGS:= -std=c11 -pedantic -pedantic-errors -g -Wall -Werror -Wextra -D_POSIX_C_SOURCE=200112L -fsanitize=address
+CFLAGS:= -std=c11 -pedantic -pedantic-errors -g -Wall  -Wextra -D_POSIX_C_SOURCE=200112L -fsanitize=address #-Werror
 SMTPD_CLI:= smtpd
-SMTPD_OBJS:= Authentication.o
+SMTPD_OBJS:= args.o netutils.o parser.o stm.o selector.o parser_utils.o buffer.o main.o
 
 .PHONY: all clean
 

@@ -6,7 +6,6 @@
  * selector.c - un muliplexor de entrada salida
  */
 #include "selector.h"
-#include "logging/logger.h"
 #include <assert.h> // :)
 #include <errno.h>  // :)
 #include <fcntl.h>
@@ -597,7 +596,7 @@ TSelectorStatus selector_select(TSelector s) {
                 for (int i = 0; i <= s->max_fd; i++) {
                     if (FD_ISSET(i, &s->master_r) || FD_ISSET(i, &s->master_w)) {
                         if (-1 == fcntl(i, F_GETFD, 0)) {
-                            logf(LOG_ERROR, "Selected detected bad file descriptor: %d", i);
+                           // logf(LOG_ERROR, "Selected detected bad file descriptor: %d", i);
                         }
                     }
                 }
