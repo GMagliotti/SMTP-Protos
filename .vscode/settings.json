@@ -1,0 +1,14 @@
+{
+  "files.associations": {
+    "assert.h": "c",
+    "signal.h": "c",
+    "socket.h": "c",
+    "select.h": "c",
+    "string.h": "c",
+    "stdlib.h": "c",
+    "signal-defs.h": "c",
+    "selector.h": "c"
+  },
+  "C_Cpp.errorSquiggles": "enabled",
+  "editor.formatOnSave": true
+}
