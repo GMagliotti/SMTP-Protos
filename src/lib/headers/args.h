@@ -5,22 +5,24 @@
 
 #define MAX_ARGS_USERS 10
 
-struct users {
-    char* name;
-    char* pass;
+struct users
+{
+	char* name;
+	char* pass;
 };
 
-struct socks5args {
-    char* socksAddr;
-    unsigned short socksPort;
+struct socks5args
+{
+	char* socksAddr;
+	unsigned short socksPort;
 
-    char* mngAddr;
-    unsigned short mngPort;
+	char* mngAddr;
+	unsigned short mngPort;
 
-    bool disectorsEnabled;
+	bool disectorsEnabled;
 
-    unsigned short nusers;
-    struct users users[MAX_ARGS_USERS];
+	unsigned short nusers;
+	struct users users[MAX_ARGS_USERS];
 };
 
 /**

@@ -1,10 +1,13 @@
-#ifndef SELECTOR_H_
-#define SELECTOR_H_
+#ifndef SELECTOR_H_W50GNLODsARolpHbsDsrvYvMsbT
+#define SELECTOR_H_W50GNLODsARolpHbsDsrvYvMsbT
 
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
-#include <unistd.h>
-
+#include <sys/types.h>
+#include <time.h>
 /**
  * selector.c - un muliplexor de entrada salida
  *
@@ -29,7 +32,7 @@
  * concurrencia.
  *
  * Dicha señalización se realiza mediante señales, y es por eso que al
- * iniciar la librería `TSelectorInit' se debe configurar una señal a utilizar.
+ * iniciar la librería `selector_init' se debe configurar una señal a utilizar.
  *
  * Todos métodos retornan su estado (éxito / error) de forma uniforme.
  * Puede utilizar `selector_error' para obtener una representación human
@@ -37,53 +40,55 @@
  * en errno(3).
  *
  * El flujo de utilización de la librería es:
- *  - iniciar la libreria `TSelectorInit'
+ *  - iniciar la libreria `selector_init'
  *  - crear un selector: `selector_new'
  *  - registrar un file descriptor: `selector_register_fd'
  *  - esperar algún evento: `selector_iteratate'
  *  - destruir los recursos de la librería `selector_close'
  */
-typedef struct fdselector* TSelector;
+typedef struct fdselector* fd_selector;
 
 /** valores de retorno. */
-typedef enum {
-    /** llamada exitosa */
-    SELECTOR_SUCCESS = 0,
-    /** no pudimos alocar memoria */
-    SELECTOR_ENOMEM = 1,
-    /** llegamos al límite de descriptores que la plataforma puede manejar */
-    SELECTOR_MAXFD = 2,
-    /** argumento ilegal */
-    SELECTOR_IARGS = 3,
-    /** descriptor ya está en uso */
-    SELECTOR_FDINUSE = 4,
-    /** I/O error check errno */
-    SELECTOR_IO = 5,
-} TSelectorStatus;
+typedef enum
+{
+	/** llamada exitosa */
+	SELECTOR_SUCCESS = 0,
+	/** no pudimos alocar memoria */
+	SELECTOR_ENOMEM = 1,
+	/** llegamos al límite de descriptores que la plataforma puede manejar */
+	SELECTOR_MAXFD = 2,
+	/** argumento ilegal */
+	SELECTOR_IARGS = 3,
+	/** descriptor ya está en uso */
+	SELECTOR_FDINUSE = 4,
+	/** I/O error check errno */
+	SELECTOR_IO = 5,
+} selector_status;
 
 /** retorna una descripción humana del fallo */
-const char* selector_error(const TSelectorStatus status);
+const char* selector_error(const selector_status status);
 
 /** opciones de inicialización del selector */
-typedef struct {
-    /** señal a utilizar para notificaciones internas */
-    const int signal;
+struct selector_init
+{
+	/** señal a utilizar para notificaciones internas */
+	const int signal;
 
-    /** tiempo máximo de bloqueo durante `selector_iteratate' */
-    struct timespec select_timeout;
-} TSelectorInit;
+	/** tiempo máximo de bloqueo durante `selector_iteratate' */
+	struct timespec select_timeout;
+};
 
 /** inicializa la librería */
-TSelectorStatus selector_init(const TSelectorInit* c);
+selector_status selector_init(const struct selector_init* c);
 
 /** deshace la incialización de la librería */
-TSelectorStatus selector_close(void);
+selector_status selector_close(void);
 
 /* instancia un nuevo selector. returna NULL si no puede instanciar  */
-TSelector selector_new(const size_t initial_elements);
+fd_selector selector_new(const size_t initial_elements);
 
 /** destruye un selector creado por _new. Tolera NULLs */
-void selector_destroy(TSelector s);
+void selector_destroy(fd_selector s);
 
 /**
  * Intereses sobre un file descriptor (quiero leer, quiero escribir, …)
@@ -93,11 +98,12 @@ void selector_destroy(TSelector s);
  *
  * OP_NOOP es útil para cuando no se tiene ningún interés.
  */
-typedef enum {
-    OP_NOOP = 0,
-    OP_READ = 1 << 0,
-    OP_WRITE = 1 << 2,
-} TFdInterests;
+typedef enum
+{
+	OP_NOOP = 0,
+	OP_READ = 1 << 0,
+	OP_WRITE = 1 << 2,
+} fd_interest;
 
 /**
  * Quita un interés de una lista de intereses
@@ -107,30 +113,32 @@ typedef enum {
 /**
  * Argumento de todas las funciones callback del handler
  */
-typedef struct {
-    /** el selector que dispara el evento */
-    TSelector s;
-    /** el file descriptor en cuestión */
-    int fd;
-    /** dato provisto por el usuario */
-    void* data;
-} TSelectorKey;
+typedef struct selector_key
+{
+	/** el selector que dispara el evento */
+	fd_selector s;
+	/** el file descriptor en cuestión */
+	int fd;
+	/** dato provisto por el usuario */
+	void* data;
+} selector_key;
 
 /**
  * Manejador de los diferentes eventos..
  */
-typedef struct {
-    void (*handle_read)(TSelectorKey* key);
-    void (*handle_write)(TSelectorKey* key);
-    void (*handle_block)(TSelectorKey* key);
+typedef struct fd_handler
+{
+	void (*handle_read)(struct selector_key* key);
+	void (*handle_write)(struct selector_key* key);
+	void (*handle_block)(struct selector_key* key);
 
-    /**
-     * llamado cuando se se desregistra el fd
-     * Seguramente deba liberar los recusos alocados en data.
-     */
-    void (*handle_close)(TSelectorKey* key);
+	/**
+	 * llamado cuando se se desregistra el fd
+	 * Seguramente deba liberar los recusos alocados en data.
+	 */
+	void (*handle_close)(struct selector_key* key);
 
-} TFdHandler;
+} fd_handler;
 
 /**
  * registra en el selector `s' un nuevo file descriptor `fd'.
@@ -143,35 +151,28 @@ typedef struct {
  *
  * @return 0 si fue exitoso el registro.
  */
-TSelectorStatus selector_register(TSelector s, const int fd, const TFdHandler* handler, const TFdInterests interest, void* data);
+selector_status selector_register(fd_selector s,
+                                  const int fd,
+                                  const fd_handler* handler,
+                                  const fd_interest interest,
+                                  void* data);
 
 /**
  * desregistra un file descriptor del selector
  */
-TSelectorStatus selector_unregister_fd(TSelector s, const int fd);
-
-/**
- * desregistra un file descriptor del selector sin llamar a su close
- */
-TSelectorStatus selector_unregister_fd_noclose(TSelector s, const int fd);
+selector_status selector_unregister_fd(fd_selector s, const int fd);
 
 /** permite cambiar los intereses para un file descriptor */
-TSelectorStatus selector_set_interest(TSelector s, int fd, TFdInterests i);
+selector_status selector_set_interest(fd_selector s, int fd, fd_interest i);
 
 /** permite cambiar los intereses para un file descriptor */
-TSelectorStatus selector_set_interest_key(TSelectorKey* key, TFdInterests i);
-
-/** Devuelve los intereses del selector key */
-TSelectorStatus selector_get_interests_key(TSelectorKey* key, TFdInterests* i);
-
-/** Devuelve los intereses del selector */
-TSelectorStatus selector_get_interests(TSelector s, int fd, TFdInterests* i);
+selector_status selector_set_interest_key(struct selector_key* key, fd_interest i);
 
 /**
  * se bloquea hasta que hay eventos disponible y los despacha.
  * Retorna luego de cada iteración, o al llegar al timeout.
  */
-TSelectorStatus selector_select(TSelector s);
+selector_status selector_select(fd_selector s);
 
 /**
  * Método de utilidad que activa O_NONBLOCK en un fd.
@@ -181,6 +182,6 @@ TSelectorStatus selector_select(TSelector s);
 int selector_fd_set_nio(const int fd);
 
 /** notifica que un trabajo bloqueante terminó */
-TSelectorStatus selector_notify_block(TSelector s, const int fd);
+selector_status selector_notify_block(fd_selector s, const int fd);
 
 #endif

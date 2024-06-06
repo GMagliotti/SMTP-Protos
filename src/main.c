@@ -59,14 +59,14 @@ main(const int argc, const char** argv)
 	close(0);
 
 	const char* err_msg = NULL;
-	TSelectorStatus ss = SELECTOR_SUCCESS;
-	TSelector selector = NULL;
+	selector_status ss = SELECTOR_SUCCESS;
+	fd_selector selector = NULL;
 
 	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_port = htons(port);
+	addr.sin_family = AF_INET;                 // IPv4
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);  // any local address, filter
+	addr.sin_port = htons(port);               // set port
 
 	// crear socket
 
@@ -81,8 +81,84 @@ main(const int argc, const char** argv)
 	// man 7 ip. no importa reportar nada si falla.  [SETTING SERVER SOCKET OPTIONS]
 	setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
 
-finally:
+	// bind socket to IP and port
+
+	if (bind(server, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+		err_msg = "unable to bind socket";
+		goto finally;
+	}
+
+	// listen for incoming connections
+
+	if (listen(server, 20) < 0) {
+		err_msg = "unable to listen";
+		goto finally;
+	}
+
+	// registrar sigterm es útil para terminar el programa normalmente.
+	// esto ayuda mucho en herramientas como valgrind.
+	signal(SIGTERM, sigterm_handler);
+	signal(SIGINT, sigterm_handler);
+
+	// set socket to Non blocking [SETTING SERVER SOCKET FLAGS]
+	if (selector_fd_set_nio(server) == -1) {
+		err_msg = "getting server socket flags";
+		goto finally;
+	}
+
+	// TODO: check if we need timeout
+	const struct selector_init conf = {
+        .signal = SIGALRM,
+        .select_timeout = {
+            .tv_sec  = 10,
+            .tv_nsec = 0,
+        },
+    };
+
+	if (0 != selector_init(&conf)) {
+		err_msg = "initializing selector";
+		goto finally;
+	}
+
+	selector = selector_new(1024);
+
+	if (selector == NULL) {
+		err_msg = "unable to create selector";
+		goto finally;
+	}
+
+	// TODO : define smtp server pasive socket handlers, only read
+	const struct fd_handler smtp = {
+		.handle_read = NULL,  // TODO: implement
+		.handle_write = NULL,
+		.handle_close = NULL,  // nada que liberar
+	};
+
+	// register server fd to selector in readfds set
+
+	ss = selector_register(selector, server, &smtp, OP_READ, NULL);
+	if (ss != SELECTOR_SUCCESS) {
+		err_msg = "registering fd";
+		goto finally;
+	}
+
+	// main loop to serve clients
+
+	while (!done) {
+		err_msg = NULL;
+		ss = selector_select(selector);
+		if (ss != SELECTOR_SUCCESS) {
+			err_msg = "serving";
+			goto finally;
+		}
+	}
+
+	if (err_msg == NULL) {
+		err_msg = "closing";
+	}
 	int ret = 0;
+finally:;
+
 	if (ss != SELECTOR_SUCCESS) {
 		fprintf(stderr,
 		        "%s: %s\n",
