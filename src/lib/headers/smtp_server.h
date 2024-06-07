@@ -1,8 +1,8 @@
 #ifndef SMTP_SERVER_H
 #define SMTP_SERVER_H
-#include "lib/headers/buffer.h"
-#include "lib/headers/selector.h"
-#include "lib/headers/stm.h"
+#include "buffer.h"
+#include "selector.h"
+#include "stm.h"
 
 #include <netdb.h>
 #include <stdbool.h>
@@ -30,15 +30,18 @@ typedef struct smtp_data
 
 enum smtp_states
 {
-	EHLO = 0,
-	FROM,
-	RCPT,
-	DATA,
-	ERROR,
+
+	REQUEST_READ = 0,
+	REQUEST_WRITE,
+	// EHLO = 0,
+	// FROM,
+	// RCPT,
+	// DATA,
 	DONE,
+	ERROR,
 	// definir los estados de la maquina de estados del protocolo SMTP
 };
 
-void new_active_socket(selector_key* key);
+void smtp_passive_accept(selector_key* key);
 
 #endif

@@ -11,6 +11,7 @@
  * el selector.
  */
 #include "lib/headers/selector.h"
+#include "smtp_server.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -23,7 +24,6 @@
 #include <sys/socket.h>  // socket
 #include <sys/types.h>   // socket
 #include <unistd.h>
-
 static bool done = false;
 
 static void
@@ -129,7 +129,7 @@ main(const int argc, const char** argv)
 
 	// TODO : define smtp server pasive socket handlers, only read
 	const struct fd_handler smtp = {
-		.handle_read = NULL,  // TODO: implement
+		.handle_read = smtp_passive_accept,  // TODO: implement
 		.handle_write = NULL,
 		.handle_close = NULL,  // nada que liberar
 	};

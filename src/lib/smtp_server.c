@@ -1,7 +1,8 @@
 /*
 Acá vamos a definir el read handler que acepta las conexiones entrantes, agrega el nuevo fd al selector.
-Vamos a definir una maquina de estados para manejar el socket activo  (el que se acaba de aceptar). -> READ / WRITE
-Vamos a definir otra maquina de estados para manejar el Protocolo SMTP -> Los estados del protocolo SMTP
+Vamos a definir todos los handlers que le vamos a pasar al selector para que maneje los eventos de los sockets.
+
+Esos handlers van a llamar a los handlers de la maquina de estados del protocolo SMTP.
 
 Una Maquina de Estados para cada entrada del Selector:
     * read
@@ -9,7 +10,7 @@ Una Maquina de Estados para cada entrada del Selector:
     * close   # Estos handlers van a llamar a los handlers del del state de la segunda stm
     * block
 
-Una Maquina de estado para cada Cliente:
+Una Maquina de estado para cada Cliente SM:
     * Estados relacionados con el protocolo
     * EHLO
     * RCPT
@@ -52,9 +53,8 @@ Cada estado va a tener un handlers que hay que definir
 
 #include "smtp_server.h"
 
-#include "lib/headers/buffer.h"
-#include "lib/headers/selector.h"
-#include "lib/headers/stm.h"
+#include "buffer.h"
+#include "selector.h"
 
 #include <netdb.h>
 #include <stdbool.h>
@@ -65,51 +65,29 @@ Cada estado va a tener un handlers que hay que definir
 #include <unistd.h>
 
 void destroy_socket(selector_key* data);
-
+unsigned int write_handle_write(struct selector_key* key);
+unsigned int read_handle_read(struct selector_key* key);
+const fd_handler* get_smtp_handler(void);
 static const struct state_definition smtp_states[] = {
 	// definir los estados de la maquina de estados del protocolo SMTP
 	// no necesariamente tenemos que llenar todos los campos en cada estado
-	{
-	    .state = EHLO,
-	    .on_arrival = NULL,
-	    .on_departure = NULL,
-	    .on_read_ready = NULL,
-	    .on_write_ready = NULL,
-
-	},
 
 	{
-	    .state = FROM,
+
+	    .state = REQUEST_READ,
 	    .on_arrival = NULL,
 	    .on_departure = NULL,
-	    .on_read_ready = NULL,
+	    .on_read_ready = read_handle_read,
 	    .on_write_ready = NULL,
 	},
 
 	{
-	    .state = RCPT,
+	    .state = REQUEST_WRITE,
 	    .on_arrival = NULL,
 	    .on_departure = NULL,
 	    .on_read_ready = NULL,
-	    .on_write_ready = NULL,
+	    .on_write_ready = write_handle_write,
 	},
-
-	{
-	    .state = DATA,
-	    .on_arrival = NULL,
-	    .on_departure = NULL,
-	    .on_read_ready = NULL,
-	    .on_write_ready = NULL,
-	},
-
-	{
-	    .state = ERROR,
-	    .on_arrival = NULL,
-	    .on_departure = NULL,
-	    .on_read_ready = NULL,
-	    .on_write_ready = NULL,
-	},
-
 	{
 	    .state = DONE,
 	    .on_arrival = NULL,
@@ -117,17 +95,58 @@ static const struct state_definition smtp_states[] = {
 	    .on_read_ready = NULL,
 	    .on_write_ready = NULL,
 	},
+	{
+	    .state = ERROR,
+	    .on_arrival = NULL,
+	    .on_departure = NULL,
+	    .on_read_ready = NULL,
+	    .on_write_ready = NULL,
+	}
+
 };
+
+unsigned int
+write_handle_write(struct selector_key* key)
+{
+	// smtp_data* data = ATTACHMENT(key);
+	int send_bytes = send(key->fd, "Hola Bienvenido ! \0", 19, MSG_NOSIGNAL);
+	if (send_bytes < 0) {
+		perror("send");
+		destroy_socket(key);
+		return -1;
+	}
+
+	selector_set_interest_key(key, OP_READ);
+	return REQUEST_READ;
+}
+unsigned int
+read_handle_read(struct selector_key* key)
+{
+	// smtp_data* data = ATTACHMENT(key);
+	char buffer[100];
+	// read data from socket
+	int read_bytes = recv(key->fd, buffer, 99, 0);
+
+	if (read_bytes < 0) {
+		perror("recv");
+		destroy_socket(key);
+		return -1;
+	}
+	printf("Read %d bytes\n", read_bytes);
+	// print read_bytes from buffer
+	buffer[read_bytes] = '\0';
+	puts(buffer);
+	selector_set_interest_key(key, OP_WRITE);
+	return REQUEST_WRITE;
+}
 
 static void read_handler(struct selector_key* key);
 static void write_handler(struct selector_key* key);
-static void block_handler(struct selector_key* key);
 static void close_handler(struct selector_key* key);
 
 static fd_handler smtp_handler = {
 	.handle_read = read_handler,
 	.handle_write = write_handler,
-	.handle_block = block_handler,
 	.handle_close = close_handler,
 };
 
@@ -135,12 +154,26 @@ const fd_handler*
 get_smtp_handler(void)
 {
 	return &smtp_handler;
-};
+}
 
-static void read_handler(struct selector_key* key) {};
-static void write_handler(struct selector_key* key) {};
-static void block_handler(struct selector_key* key) {};
-static void close_handler(struct selector_key* key) {};
+static void
+read_handler(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+	stm_handler_read(&data->stm, key);
+}
+static void
+write_handler(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+	stm_handler_write(&data->stm, key);
+}
+static void
+close_handler(struct selector_key* key)
+{
+	stm_handler_close(&ATTACHMENT(key)->stm, key);
+	destroy_socket(key);
+}
 
 void
 destroy_socket(selector_key* key)
@@ -148,15 +181,12 @@ destroy_socket(selector_key* key)
 	smtp_data* data = ATTACHMENT(key);
 
 	selector_unregister_fd(key->s, data->fd);
-
-	buffer_destroy(&data->read_buffer);
-	buffer_destroy(&data->write_buffer);
-
+	close(data->fd);
 	free(data);
-};
+}
 
 void
-new_active_socket(selector_key* key)
+smtp_passive_accept(selector_key* key)
 {
 	// Crear un nuevo socket
 
@@ -181,22 +211,19 @@ new_active_socket(selector_key* key)
 
 	data->fd = new_socket;
 	data->client_addr = client_addr;
-	data->stm.initial = EHLO;
-	data->stm.max_state = DONE;
+	data->stm.initial = REQUEST_WRITE;
+	data->stm.max_state = ERROR;
 	data->stm.states = smtp_states;
 
-	buffer_init(&data->read_buffer, BUFFER_SIZE, N(data->read_buffer.data));
-	buffer_init(&data->write_buffer, BUFFER_SIZE, N(data->write_buffer.data));
+	// buffer_init(&data->read_buffer, BUFFER_SIZE, data->read_buffer.data);
+	// buffer_init(&data->write_buffer, BUFFER_SIZE, data->write_buffer.data);
 
 	stm_init(&data->stm);
-
-	// read, write, block, close handlers para el nuevo socket TODO
-	selector_status status = selector_register(key->s, new_socket, NULL, OP_READ, data);
+	selector_status status = selector_register(key->s, new_socket, get_smtp_handler(), OP_WRITE, data);
 
 	if (status != SELECTOR_SUCCESS) {
 		perror("selector_register");
-		close(new_socket);
-		free(data);
+		destroy_socket(key);
 		return;
 	}
 }

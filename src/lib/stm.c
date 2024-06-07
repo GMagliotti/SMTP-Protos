@@ -7,7 +7,7 @@
 #include <stdlib.h>
 
 #define N(x) (sizeof(x) / sizeof((x)[0]))
-
+struct selector_key* key;
 void
 stm_init(struct state_machine* stm)
 {

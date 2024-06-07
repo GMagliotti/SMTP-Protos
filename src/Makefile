@@ -44,7 +44,7 @@
 
 CFLAGS:= -std=c11 -pedantic -pedantic-errors -g -Wall  -Wextra -D_POSIX_C_SOURCE=200112L -Werror -fsanitize=address -Ilib/headers -Itest/headers 
 SMTPD_CLI:= smtpd
-LIB_OBJS:= build/args.o build/netutils.o build/parser.o build/stm.o build/selector.o build/parser_utils.o build/buffer.o
+LIB_OBJS:= build/args.o build/netutils.o build/parser.o build/stm.o build/selector.o build/parser_utils.o build/buffer.o build/smtp_server.o
 MAIN_OBJ:= build/main.o
 TEST_OBJS:= build/hello_test.o build/netutils_test.o build/parser_test.o build/parser_utils_test.o
 
