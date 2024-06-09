@@ -1,5 +1,5 @@
 /**
- * main.c - servidor proxy socks concurrente
+ * main.c - servidor de correo electrónico SMTP no bloqueante
  *
  * Interpreta los argumentos de línea de comandos, y monta un socket
  * pasivo.
@@ -62,38 +62,66 @@ main(const int argc, const char** argv)
 	selector_status ss = SELECTOR_SUCCESS;
 	fd_selector selector = NULL;
 
-	struct sockaddr_in addr;
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;                 // IPv4
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);  // any local address, filter
-	addr.sin_port = htons(port);               // set port
+	struct sockaddr_in6 addr6;
+    struct sockaddr_in addr4;
+    memset(&addr6, 0, sizeof(addr6));
+	memset(&addr4, 0, sizeof(addr4));
 
-	// crear socket
+	addr6.sin6_family = AF_INET6;				// IPv6
+    addr6.sin6_addr = in6addr_any;				// any local address, filter
+    addr6.sin6_port = htons(port);				// set port
+    
+    addr4.sin_family = AF_INET;					// IPv4
+    addr4.sin_addr.s_addr = htonl(INADDR_ANY);	// any local address, filter
+    addr4.sin_port = htons(port);				// set port
 
-	const int server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (server < 0) {
-		err_msg = "unable to create socket";
-		goto finally;
-	}
+
+	// create sockets
+    const int server6 = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+    if (server6 < 0) {
+        err_msg = "unable to create IPv6 socket";
+        goto finally;
+    }
+
+    const int server4 = socket(AF_INET, SOCK_STREAM, 0);
+    if (server4 < 0) {
+        err_msg = "unable to create IPv4 socket";
+        goto finally;
+    }
 
 	fprintf(stdout, "Listening on TCP port %d\n", port);
 
-	// man 7 ip. no importa reportar nada si falla.  [SETTING SERVER SOCKET OPTIONS]
-	setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+	// man 7 ip. no importa reportar nada si falla.
+	
+	setsockopt(server6, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+	setsockopt(server4, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+	
+	// nos aseguramos que el socket IPv6 no escuche en direcciones IPv4
+	setsockopt(server6, IPPROTO_IPV6, IPV6_V6ONLY, &(int){ 1 }, sizeof(int));
 
-	// bind socket to IP and port
 
-	if (bind(server, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-		err_msg = "unable to bind socket";
-		goto finally;
-	}
+	// bind sockets to IP and port
+    if (bind(server6, (struct sockaddr*)&addr6, sizeof(addr6)) < 0) {
+        err_msg = "unable to bind IPv6 socket";
+        goto finally;
+    }
+
+    if (bind(server4, (struct sockaddr*)&addr4, sizeof(addr4)) < 0) {
+        err_msg = "unable to bind IPv4 socket";
+        goto finally;
+    }
+
 
 	// listen for incoming connections
+    if (listen(server6, 20) < 0) {
+        err_msg = "unable to listen on IPv6 socket";
+        goto finally;
+    }
 
-	if (listen(server, 20) < 0) {
-		err_msg = "unable to listen";
-		goto finally;
-	}
+    if (listen(server4, 20) < 0) {
+        err_msg = "unable to listen on IPv4 socket";
+        goto finally;
+    }
 
 	// registrar sigterm es útil para terminar el programa normalmente.
 	// esto ayuda mucho en herramientas como valgrind.
@@ -101,10 +129,14 @@ main(const int argc, const char** argv)
 	signal(SIGINT, sigterm_handler);
 
 	// set socket to Non blocking [SETTING SERVER SOCKET FLAGS]
-	if (selector_fd_set_nio(server) == -1) {
-		err_msg = "getting server socket flags";
-		goto finally;
-	}
+	if (selector_fd_set_nio(server6) == -1) {
+        err_msg = "getting server IPv6 socket flags";
+        goto finally;
+    }
+    if (selector_fd_set_nio(server4) == -1) {
+        err_msg = "getting server IPv4 socket flags";
+        goto finally;
+    }
 
 	// TODO: check if we need timeout
 	const struct selector_init conf = {
@@ -134,13 +166,18 @@ main(const int argc, const char** argv)
 		.handle_close = NULL,  // nada que liberar
 	};
 
-	// register server fd to selector in readfds set
+	// register servers fd to selector in readfds set
+    ss = selector_register(selector, server6, &smtp, OP_READ, NULL);
+    if (ss != SELECTOR_SUCCESS) {
+        err_msg = "registering IPv6 fd";
+        goto finally;
+    }
 
-	ss = selector_register(selector, server, &smtp, OP_READ, NULL);
-	if (ss != SELECTOR_SUCCESS) {
-		err_msg = "registering fd";
-		goto finally;
-	}
+    ss = selector_register(selector, server4, &smtp, OP_READ, NULL);
+    if (ss != SELECTOR_SUCCESS) {
+        err_msg = "registering IPv4 fd";
+        goto finally;
+    }
 
 	// main loop to serve clients
 
@@ -174,8 +211,11 @@ finally:;
 	}
 	selector_close();
 
-	if (server >= 0) {
-		close(server);
-	}
+	if (server6 >= 0) {
+        close(server6);
+    }
+    if (server4 >= 0) {
+        close(server4);
+    }
 	return ret;
 }
