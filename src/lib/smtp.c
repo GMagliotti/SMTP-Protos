@@ -28,7 +28,7 @@ Cada estado va a tener un handlers que hay que definir
 
 
 
-    struct socks5
+    struct smtp
 {
     …
         // maquinas de estados

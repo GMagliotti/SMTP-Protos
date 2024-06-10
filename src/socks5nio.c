@@ -83,6 +83,9 @@ struct hello_st
     struct socks5
 {
 	…
+		char* mail_from;
+		char[] recpt_to;
+
 	    /** maquinas de estados */
 	    struct state_machine stm;
 

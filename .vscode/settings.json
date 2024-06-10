@@ -17,8 +17,12 @@
     "parser.h": "c",
     "stdint.h": "c",
     "types.h": "c",
-    "fcntl.h": "c"
+    "fcntl.h": "c",
+    "stdbool.h": "c",
+    "netdb.h": "c",
+    "smtp_server.h": "c"
   },
   "C_Cpp.errorSquiggles": "enabled",
-  "editor.formatOnSave": true
+  "editor.formatOnSave": true,
+  "C_Cpp.intelliSenseEngine": "default",
 }
