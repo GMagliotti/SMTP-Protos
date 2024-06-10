@@ -11,7 +11,7 @@
  * el selector.
  */
 #include "lib/headers/selector.h"
-#include "smtp_server.h"
+#include "lib/headers/smtp.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -129,7 +129,7 @@ main(const int argc, const char** argv)
 
 	// TODO : define smtp server pasive socket handlers, only read
 	const struct fd_handler smtp = {
-		.handle_read = smtp_passive_accept,  // TODO: implement
+		.handle_read = smtp_passive_accept,
 		.handle_write = NULL,
 		.handle_close = NULL,  // nada que liberar
 	};
@@ -143,7 +143,6 @@ main(const int argc, const char** argv)
 	}
 
 	// main loop to serve clients
-
 	while (!done) {
 		err_msg = NULL;
 		ss = selector_select(selector);
@@ -157,7 +156,7 @@ main(const int argc, const char** argv)
 		err_msg = "closing";
 	}
 	int ret = 0;
-finally:;
+finally:
 
 	if (ss != SELECTOR_SUCCESS) {
 		fprintf(stderr,

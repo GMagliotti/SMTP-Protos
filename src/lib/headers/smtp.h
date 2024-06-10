@@ -1,6 +1,7 @@
 #ifndef SMTP_SERVER_H
 #define SMTP_SERVER_H
 #include "buffer.h"
+#include "request.h"
 #include "selector.h"
 #include "stm.h"
 
@@ -12,6 +13,7 @@
 #define ATTACHMENT(key) ((smtp_data*)(key)->data)
 #define N(x)            (sizeof(x) / sizeof((x)[0]))
 #define BUFFER_SIZE     4096
+
 typedef struct smtp_data
 {
 	struct state_machine stm;
@@ -26,6 +28,14 @@ typedef struct smtp_data
 	struct buffer read_buffer;
 	struct buffer write_buffer;
 
+	// parser
+
+	struct request_parser request_parser;
+	enum request_state request_state;
+
+	// raw buffer
+	uint8_t raw_buff_write[BUFFER_SIZE];
+	uint8_t raw_buff_read[BUFFER_SIZE];
 } smtp_data;
 
 enum smtp_states
@@ -43,5 +53,6 @@ enum smtp_states
 };
 
 void smtp_passive_accept(selector_key* key);
+void destroy_socket(selector_key* data);
 
 #endif
