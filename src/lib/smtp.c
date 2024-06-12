@@ -67,6 +67,7 @@ Cada estado va a tener un handlers que hay que definir
 unsigned int request_read_handler(struct selector_key* key);
 unsigned int request_write_handler(struct selector_key* key);
 void request_read_init(unsigned int state, struct selector_key* key);
+void request_read_close(unsigned int state, struct selector_key* key);
 void smtp_done(selector_key* key);
 const fd_handler* get_smtp_handler(void);
 
@@ -78,6 +79,7 @@ static const struct state_definition smtp_states[] = {
 	    .state = REQUEST_READ,
 	    .on_read_ready = request_read_handler,
 	    .on_arrival = request_read_init,
+		.on_departure = request_read_close,
 	},
 
 	{
@@ -121,7 +123,7 @@ write_handler(struct selector_key* key)
 static void
 close_handler(struct selector_key* key)
 {
-	// stm_handler_close(&ATTACHMENT(key)->stm, key);
+	stm_handler_close(&ATTACHMENT(key)->stm, key);
 	smtp_done(key);
 }
 
@@ -175,10 +177,11 @@ smtp_passive_accept(selector_key* key)
 	buffer_init(&data->read_buffer, N(data->raw_buff_read), data->raw_buff_read);
 	buffer_init(&data->write_buffer, N(data->raw_buff_write), data->raw_buff_write);
 
+	stm_init(&data->stm);
+
 	memcpy(&data->raw_buff_write, "220 Bienvenido al servidor SMTP\n\0", 32);
 	buffer_write_adv(&data->write_buffer, 32);
 
-	stm_init(&data->stm);
 	selector_status status = selector_register(key->s, new_socket, get_smtp_handler(), OP_WRITE, data);
 
 	if (status != SELECTOR_SUCCESS) {
@@ -223,6 +226,7 @@ request_read_init(unsigned int state, struct selector_key* key)
 {
 	if (state != REQUEST_READ) {
 		smtp_data* data = ATTACHMENT(key);
+		data->request_parser.request = &data->request;
 		request_parser_init(&data->request_parser);
 	}
 }
@@ -238,30 +242,43 @@ request_read_handler(struct selector_key* key)
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
 
-	int ret;
+	int ret = REQUEST_READ;
 
 	if (recv_bytes > 0) {
 		buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
 		// const enum smtp_states st = stm_handler_read(&data->stm, key);
 
 		// procesamiento
+		bool error = false;
+		int st = request_consume(&data->read_buffer, &data->request_parser, &error);
+			if(request_is_done(st, 0)) {
+				// armado de la rta
+				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+				ret = REQUEST_WRITE;
 
-		// armado de la rta
+				uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+				// acá entraría el tema del parser
+				memcpy(ptr, "200\r\n", 5);
+				buffer_write_adv(&data->write_buffer, 5);
 
-		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			ret = REQUEST_WRITE;
-
-			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-			// acá entraría el tema del parser
-			memcpy(ptr, "200\r\n", 5);
-			buffer_write_adv(&data->write_buffer, 5);
-
-		} else {
-			ret = ERROR;
+			} else {
+				ret = ERROR;
+			}
 		}
+
+		
 
 	} else {
 		ret = ERROR;
 	}
 	return ret;
+}
+
+void
+request_read_close(unsigned int state, struct selector_key* key)
+{
+	if (state == REQUEST_READ) {
+		smtp_data* data = ATTACHMENT(key);
+		request_close(&data->request_parser);
+	}
 }

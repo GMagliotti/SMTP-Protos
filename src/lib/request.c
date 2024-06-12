@@ -22,16 +22,24 @@
 
 //////////////////////////////////////////////////////////////////////////////
 
+
 static enum request_state
 verb(const uint8_t c, struct request_parser* p)
 {
 	// TODO
 	enum request_state next;
-	if (c == ' ') {
-		next = request_sep_arg1;
-	} else {
-		next = request_error;
-	}
+	switch (c)
+			{
+			case '\r':
+				next = request_cr;
+				break;
+			case ' ':
+				next = request_sep_arg1;
+				break;
+			default:
+				next = request_verb; // next = request_error; ?
+				break;
+			}
 	p->i = p->i;
 	return next;
 }
@@ -50,13 +58,25 @@ request_parser_feed(struct request_parser* p, const uint8_t c)
 
 	switch (p->state) {
 		case request_verb:
-			next = verb(c, p);  // rename
+			next = verb(c, p);
 			break;
 		case request_sep_arg1:
 			// next = cmd(c, p);
 			break;
 		case request_arg1:
 			// next = rsv(c, p);
+			break;
+		case request_cr:
+			switch (c)
+			{
+			case '\n':
+				next = request_done;
+				break;
+			
+			default:
+				next = request_verb;
+				break;
+			}
 			break;
 
 		case request_done:

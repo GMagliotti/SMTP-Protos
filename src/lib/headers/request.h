@@ -73,6 +73,7 @@ enum request_state
 	request_verb,
 	request_sep_arg1,
 	request_arg1,
+	request_cr,
 
 	// apartir de aca están done
 	request_done,

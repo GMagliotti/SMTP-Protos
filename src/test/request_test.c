@@ -15,14 +15,19 @@ START_TEST (test_request_unsuppored_version) {
     };
     request_parser_init(&parser);
     uint8_t data[] = {
-        0x04,
+        'd',
+        'a',
+        't',
+        'a',
+        '\r',
+        '\n'
     };
     buffer b; FIXBUF(b, data);
     bool errored = false;
     enum request_state st = request_consume(&b, &parser, &errored);
     
-    ck_assert_uint_eq(true, errored);
-    ck_assert_uint_eq(request_error_unsupported_version,     st);
+    ck_assert_uint_eq(false, errored);
+    ck_assert_uint_eq(request_done, st);
 
 }
 END_TEST
