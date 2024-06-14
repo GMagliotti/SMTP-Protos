@@ -67,7 +67,7 @@ typedef struct parser_definition
 /**
  * El usuario alimenta el parser con un caracter, y el parser retorna el id del estado al que debera redirigirse. 
  */
-int * parser_feed(struct selector_key * key, parser_definition * parser, unsigned current_state_id, uint8_t c);
+int parser_feed(struct selector_key * key, parser_definition * parser, unsigned current_state_id, uint8_t c);
 
 /*
  * Se agregan a la transicion aquellos chars aceptados

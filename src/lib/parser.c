@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-int * parser_feed(struct selector_key * key, parser_definition * parser, unsigned current_state_id, uint8_t c){
+int parser_feed(struct selector_key * key, parser_definition * parser, unsigned current_state_id, uint8_t c){
 	if (parser == NULL){
 		//TODO: loggear error NULL parser
 		return -1;
@@ -39,12 +39,12 @@ int * parser_feed(struct selector_key * key, parser_definition * parser, unsigne
 		//Char aceptado
 		if(transitions[i].accepted_chars[char_index]){
 			//Vemos si hay un metodo de salida de estado
-			parser_state * from_state = transitions[i].from_state;
+			parser_state * from_state = &parser->states[transitions[i].from_state];
 			if(from_state->on_departure != NULL) {
 				from_state->on_departure(key, c);
 			}
 			//Vemos si hay un metodo de entrada para el nuevo estado
-			parser_state * to_state = transitions[i].to_state;
+			parser_state * to_state = &parser->states[transitions[i].to_state];
 			if(to_state->on_arrival != NULL) {
 				to_state->on_arrival(key, c);
 			}
@@ -52,21 +52,19 @@ int * parser_feed(struct selector_key * key, parser_definition * parser, unsigne
 			return to_state->id;
 		}
 
-		//No se encontro ninguna transicion para el char, por lo tanto no fue aceptado
-		//Por lo tanto, una opcion ahora es ir al estado de error
-		if(parser->states[current_state_id].on_departure != NULL){
-			parser->states[current_state_id].on_departure(key, c);
-		}
-
-		if(parser->error_state->on_arrival != NULL){
-			parser->error_state->on_arrival(key, c);
-		}
-
-		return parser->error_state->id;
 	}
 	
-	
+	//No se encontro ninguna transicion para el char, por lo tanto no fue aceptado
+	//Por lo tanto, una opcion ahora es ir al estado de error
+	if(parser->states[current_state_id].on_departure != NULL){
+		parser->states[current_state_id].on_departure(key, c);
+	}
 
+	if(parser->error_state->on_arrival != NULL){
+		parser->error_state->on_arrival(key, c);
+	}
+
+	return parser->error_state->id;
 }
 
 bool is_final(parser_state * state){
