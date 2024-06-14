@@ -14,7 +14,21 @@
 #include <stdint.h>
 #include <selector.h>
 
-#define ASCII_CHARS 127
+/** Restamos todos los ASCII que no sean printeables exceptuando por ' ', '\r', '\n' **/
+/**
+ ! (33) -> 0 (33-32-1)
+ " (34) -> 1 (34-32-1)
+ ...
+ ? (127) -> 94 (127-32-1)
+ ' ' -> 95
+ '\n'-> 96
+ '\r'->97
+ **/
+#define PRINTABLE_ASCII_CHARS 127 - 32 + 3
+#define CHARS_ARRAY_SHIFT 32
+#define SPACE_INDEX 95
+#define LF_INDEX 96
+#define CR_INDEX 97
 
 /** Funcion de transicion de un estado a otro, recibe todas las funciones de callback de handler y char procesado **/
 typedef void (* parser_state_function) (struct selector_key * key, u_int8_t c);
@@ -33,7 +47,7 @@ typedef struct parser_state
 typedef struct parser_transition {
 	unsigned from_state;
 	unsigned to_state;
-	bool accepted_chars[ASCII_CHARS];
+	bool accepted_chars[PRINTABLE_ASCII_CHARS];
 } parser_transition;
 
 /** Declaracion completa de una máquina de estados */
@@ -43,14 +57,22 @@ typedef struct parser_definition
 	parser_state * states;
 	parser_state * initial_state;
 	parser_state * error_state;
+	/** [{transiciones estado 0, transiciones 1, ..., transiciones N}] **/
+	parser_transition ** transitions;
+	/** [#transiciones estado 0, #transiciones 1, ..., #transiciones N] **/
+	size_t * transitions_per_state;
 } parser_definition;
 
 
 /**
  * El usuario alimenta el parser con un caracter, y el parser retorna el id del estado al que debera redirigirse. 
- * Los eventos son reusado entre llamadas por lo que si se desea
  */
 int * parser_feed(struct selector_key * key, parser_definition * parser, unsigned current_state_id, uint8_t c);
+
+/*
+ * Se agregan a la transicion aquellos chars aceptados
+*/
+void add_accepted_chars_to_transition(parser_transition * transition, char * array_chars);
 
 /**
  * Retorna si el estado es final o no
