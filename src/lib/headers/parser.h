@@ -72,7 +72,12 @@ int parser_feed(struct selector_key * key, parser_definition * parser, unsigned 
 /*
  * Se agregan a la transicion aquellos chars aceptados
 */
-void add_accepted_chars_to_transition(parser_transition * transition, char * array_chars);
+void add_accepted_chars_to_transition(parser_transition * transition, u_int8_t * array_chars);
+
+/*
+ * Se agregan a la transicion aquellos chars rechazados
+*/
+void add_rejected_chars_to_transition(parser_transition * transition, u_int8_t * array_chars);
 
 /**
  * Retorna si el estado es final o no
