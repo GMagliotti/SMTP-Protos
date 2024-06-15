@@ -22,25 +22,29 @@
 
 //////////////////////////////////////////////////////////////////////////////
 
-
 static enum request_state
 verb(const uint8_t c, struct request_parser* p)
 {
 	// TODO
 	enum request_state next;
-	switch (c)
-			{
-			case '\r':
-				next = request_cr;
-				break;
-			case ' ':
-				next = request_sep_arg1;
-				break;
-			default:
-				next = request_verb; // next = request_error; ?
-				break;
-			}
-	p->i = p->i;
+	switch (c) {
+		case '\r':
+			next = request_cr;
+			break;
+		case ' ':
+			next = request_sep_arg1;
+			break;
+		default:
+			next = request_verb;  // next = request_error; ?
+			break;
+	}
+	if (next == request_verb) {
+		if (p->i < sizeof(p->request->verb)) {  // checking for buffer overflow
+			p->request->verb[p->i++] = c;       // should it be sizeof - 1 instead?
+		}
+	} else {
+		p->request->verb[p->i] = '\0';
+	}
 	return next;
 }
 
@@ -67,15 +71,14 @@ request_parser_feed(struct request_parser* p, const uint8_t c)
 			// next = rsv(c, p);
 			break;
 		case request_cr:
-			switch (c)
-			{
-			case '\n':
-				next = request_done;
-				break;
-			
-			default:
-				next = request_verb;
-				break;
+			switch (c) {
+				case '\n':
+					next = request_done;
+					break;
+
+				default:
+					next = request_verb;
+					break;
 			}
 			break;
 

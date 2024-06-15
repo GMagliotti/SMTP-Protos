@@ -38,34 +38,10 @@
  *  - Address: IPAddress (4 y 6), DomainNameAdddres
  */
 
-enum socks_req_cmd
-{
-	socks_req_cmd_connect = 0x01,
-	socks_req_cmd_bind = 0x02,
-	socks_req_cmd_associate = 0x03,
-};
-
-enum socks_addr_type
-{
-	socks_req_addrtype_ipv4 = 0x01,
-	socks_req_addrtype_domain = 0x03,
-	socks_req_addrtype_ipv6 = 0x04,
-};
-
-union socks_addr
-{
-	char fqdn[0xff];
-	struct sockaddr_in ipv4;
-	struct sockaddr_in6 ipv6;
-};
-
 struct request
 {
-	enum socks_req_cmd cmd;
-	enum socks_addr_type dest_addr_type;
-	union socks_addr dest_addr;
-	/** port in network byte order */
-	in_port_t dest_port;
+	char verb[10];
+	char arg1[32];
 };
 
 enum request_state
@@ -73,7 +49,9 @@ enum request_state
 	request_verb,
 	request_sep_arg1,
 	request_arg1,
+
 	request_cr,
+	request_data,
 
 	// apartir de aca están done
 	request_done,
