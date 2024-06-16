@@ -47,6 +47,4 @@ void parser_configuration();
  * **/
 int parse_command(struct selector_key * key, smtp_command * smtp_command, struct buffer * buffer);
 
-void finish_command_parsing();
-
 #endif

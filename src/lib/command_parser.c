@@ -26,7 +26,7 @@ static void error_state_arrival(struct selector_key * key, uint8_t c);
 static void final_state_arrival(struct selector_key * key, u_int8_t c);
 
 static parser_definition * command_parser;
-static parser_transition ** transitions_list;
+static parser_transition *transitions_list[STATES_QTY];
 
 enum states {
     S0 = 0,
@@ -88,7 +88,6 @@ void parser_configuration(){
     command_parser->initial_state = &state_details[S0];
     command_parser->error_state = &state_details[SERROR];
 
-    transitions_list = malloc(STATES_QTY * sizeof(parser_transition *));
     transitions_list[S0] = S0_transitions;
     transitions_list[S1] = S1_transitions;
     transitions_list[S2] = S2_transitions;
@@ -124,9 +123,6 @@ int parse_command(struct selector_key * key, smtp_command * smtp_command, struct
     return state;
 }
 
-void finish_command_parsing(){
-    free(transitions_list);
-}
 
 /** Estamos en S0 y entra un char, empezamos a procesar. SMTP NO ES case sensitive **/
 static void reading_command(struct selector_key * key, u_int8_t c){
