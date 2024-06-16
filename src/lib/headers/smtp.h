@@ -4,6 +4,7 @@
 #include "request.h"
 #include "selector.h"
 #include "stm.h"
+#include "command_parser.h"
 
 #include <netdb.h>
 #include <stdbool.h>
@@ -33,6 +34,7 @@ typedef struct smtp_data {
   // parser
   struct request_parser request_parser;
   struct request request;
+  smtp_command command_parser;
 
   // raw buffer
   uint8_t raw_buff_write[BUFFER_SIZE];

@@ -2,6 +2,7 @@
 #include "parser.h"
 #include "selector.h"
 #include "command_parser.h"
+#include "smtp.h"
 
 /** Parser de comandos o "linea" ingresada por el usuario
  *  Estados: S0, S1, S2, S3, SERROR. Siendo S2 y SERROR estados finales
@@ -72,6 +73,8 @@ void init_command_parsing(smtp_command * smtp_command){
     }
 
     smtp_command->parser = &command_parser;
+    smtp_command->command_dim = 0;
+    smtp_command->arg_dim = 0;
     //TODO: setear memoria de los vectores de comandos
 }
 
@@ -105,4 +108,38 @@ void parser_configuration(){
 
 void finish_command_parsing(){
     free(transitions_list);
+}
+
+/** Estamos en S0 y entra un char, empezamos a procesar. SMTP NO ES case sensitive **/
+static void reading_command(struct selector_key * key, u_int8_t c){
+    smtp_data * client_data = ATTACHMENT(key);
+    smtp_command * smtp_command = &client_data->command_parser;
+
+    if (smtp_command->command_dim >= MAX_COMMAND_LEN){
+        //No es comando valido
+        //TODO: Aca hay que llamar al error handler o algo que indique que el comando es bochado
+        //o capaz no se maneja aca, ni idea ajaj
+        return;
+    }
+    smtp_command->command[smtp_command->command_dim] = c;
+    smtp_command->command_dim++;
+    
+    return;
+}
+
+/** Estamos en S1 y entra un char, empezamos a procesar.**/
+static void reading_args(struct selector_key * key, u_int8_t c){
+    smtp_data * client_data = ATTACHMENT(key);
+    smtp_command * smtp_command = &client_data->command_parser;
+
+    if (smtp_command->arg_dim >= MAX_ARG_LEN) {
+        //No es argumento valido
+        //TODO: Aca hay que llamar al error handler o algo que indique que el comando es bochado
+        //o capaz no se maneja aca, ni idea ajaj
+        return;
+    }
+    smtp_command->arg[smtp_command->arg_dim] = c;
+    smtp_command->arg_dim++;
+
+    return;
 }

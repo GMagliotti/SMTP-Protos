@@ -76,6 +76,7 @@ static const struct state_definition smtp_states[] = {
 	// no necesariamente tenemos que llenar todos los campos en cada estado
 
 	{
+		//Aca irian las funciones que utilizan el command parser
 	    .state = REQUEST_READ,
 	    .on_read_ready = request_read_handler,
 	    .on_arrival = request_read_init,
@@ -83,6 +84,7 @@ static const struct state_definition smtp_states[] = {
 	},
 
 	{
+		//Aca irian las funciones que utilizan el command parser
 	    .state = REQUEST_WRITE,
 	    .on_write_ready = request_write_handler,
 	},
