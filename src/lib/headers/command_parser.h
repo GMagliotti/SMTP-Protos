@@ -26,12 +26,14 @@ typedef struct smtp_command
     parser_definition * parser;
     size_t current_state;
     bool ended;
+    bool error;
     //Guardamos espacio extra para el \0
     char command[MAX_COMMAND_LEN + 1];
     //Cada argumento esta separado por un espacio
     char arg[MAX_LINE_LEN - MAX_COMMAND_LEN - 3 + 1];
     size_t command_dim;
     size_t arg_dim;
+
 } smtp_command;
 
 /** Inicializamos el parseo de comandos **/

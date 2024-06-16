@@ -74,6 +74,7 @@ void init_command_parsing(smtp_command * smtp_command){
 
     smtp_command->parser = &command_parser;
     smtp_command->ended = false;
+    smtp_command->error = false;
     smtp_command->current_state = S0;
     smtp_command->command_dim = 0;
     smtp_command->arg_dim = 0;
@@ -159,4 +160,17 @@ static void reading_args(struct selector_key * key, u_int8_t c){
     smtp_command->arg_dim++;
 
     return;
+}
+
+static void final_state_arrival(struct selector_key * key, u_int8_t c){
+    smtp_data * client_data = ATTACHMENT(key);
+    smtp_command * smtp_command = &client_data->command_parser;
+    smtp_command->ended = true;
+}
+
+static void error_state_arrival(struct selector_key * key, uint8_t c){
+    smtp_data * client_data = ATTACHMENT(key);
+    smtp_command * smtp_command = &client_data->command_parser;
+    smtp_command->ended = true;
+    smtp_command->error = true;
 }
