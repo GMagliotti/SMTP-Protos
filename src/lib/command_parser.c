@@ -25,7 +25,7 @@ static void reading_args(struct selector_key * key, u_int8_t c);
 static void error_state_arrival(struct selector_key * key, uint8_t c);
 static void final_state_arrival(struct selector_key * key, u_int8_t c);
 
-static parser_definition * command_parser;
+static parser_definition command_parser;
 static parser_transition *transitions_list[STATES_QTY];
 
 enum states {
@@ -78,15 +78,17 @@ void init_command_parsing(smtp_command * smtp_command){
     smtp_command->current_state = S0;
     smtp_command->command_dim = 0;
     smtp_command->arg_dim = 0;
-    //TODO: setear memoria de los vectores de comandos
+
+    memset(smtp_command->command, 0, MAX_COMMAND_LEN + 1);
+    memset(smtp_command->arg, 0, MAX_LINE_LEN - MAX_COMMAND_LEN - 3 + 1);
 }
 
 void parser_configuration(){
     //Tenemos que asignar memoria para algunos campos del parser_definition
-    command_parser->states = &state_details;
-    command_parser->states_count = STATES_QTY;
-    command_parser->initial_state = &state_details[S0];
-    command_parser->error_state = &state_details[SERROR];
+    command_parser.states = state_details;
+    command_parser.states_count = STATES_QTY;
+    command_parser.initial_state = &state_details[S0];
+    command_parser.error_state = &state_details[SERROR];
 
     transitions_list[S0] = S0_transitions;
     transitions_list[S1] = S1_transitions;
@@ -94,8 +96,8 @@ void parser_configuration(){
     transitions_list[S3] = NULL;
     transitions_list[SERROR] = NULL;
 
-    command_parser->transitions = transitions_list;
-    command_parser->transitions_per_state = transitions_per_state;
+    command_parser.transitions = transitions_list;
+    command_parser.transitions_per_state = transitions_per_state;
 
     //Finalmente configuramos los vectores de booleanos
     add_rejected_chars_to_transition(&S0_transitions[0], (uint8_t *)" \r\n\0");
@@ -109,7 +111,7 @@ void parser_configuration(){
 }
 
 int parse_command(struct selector_key * key, smtp_command * smtp_command, struct buffer * buffer){
-    smtp_data * client_data = ATTACHMENT(key);
+    //smtp_data * client_data = ATTACHMENT(key);
     int state = 0;
     //Tenemos que empezar a recorrer la maquina de estados
     //Cuando finalizamos? Cuando caemos en un estado de error o final o cuando no hay mas para leer

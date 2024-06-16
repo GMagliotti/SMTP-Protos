@@ -226,11 +226,11 @@ request_write_handler(struct selector_key* key)
 void
 request_read_init(unsigned int state, struct selector_key* key)
 {
-	if (state != REQUEST_READ) {
-		smtp_data* data = ATTACHMENT(key);
-		data->request_parser.request = &data->request;
-		request_parser_init(&data->request_parser);
-	}
+	smtp_data * data = ATTACHMENT(key);
+	data->request_parser.request = &data->request;
+	//Inicializamos maquina de estados para comandos
+	init_command_parsing(&data->command_parser);
+	parser_configuration();
 }
 
 // REQUEST READ HANDLERS
@@ -251,9 +251,10 @@ request_read_handler(struct selector_key* key)
 		// const enum smtp_states st = stm_handler_read(&data->stm, key);
 
 		// procesamiento
-		bool error = false;
-		int st = request_consume(&data->read_buffer, &data->request_parser, &error);
-			if(request_is_done(st, 0)) {
+		//bool error = false;
+		//int st = request_consume(&data->read_buffer, &data->request_parser, &error);
+		parse_command(key, &data->command_parser, &data->read_buffer);
+			if(&data->command_parser.ended || &data->command_parser.error) {
 				// armado de la rta
 				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
 				ret = REQUEST_WRITE;
