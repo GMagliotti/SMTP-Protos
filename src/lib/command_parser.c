@@ -73,6 +73,8 @@ void init_command_parsing(smtp_command * smtp_command){
     }
 
     smtp_command->parser = &command_parser;
+    smtp_command->ended = false;
+    smtp_command->current_state = S0;
     smtp_command->command_dim = 0;
     smtp_command->arg_dim = 0;
     //TODO: setear memoria de los vectores de comandos
@@ -104,6 +106,21 @@ void parser_configuration(){
     add_accepted_chars_to_transition(&S1_transitions[1], (uint8_t *)"\r");
 
     add_accepted_chars_to_transition(&S2_transitions[0], (uint8_t *)"\n");
+}
+
+int parse_command(struct selector_key * key, smtp_command * smtp_command, struct buffer * buffer){
+    smtp_data * client_data = ATTACHMENT(key);
+    int state = 0;
+    //Tenemos que empezar a recorrer la maquina de estados
+    //Cuando finalizamos? Cuando caemos en un estado de error o final o cuando no hay mas para leer
+    //Para recorrer la maquina de estados usamos la referencia al parser dentro del smtp_command
+    while (smtp_command->current_state != SERROR && buffer_can_read(buffer) && smtp_command->ended != true)
+    {
+        state = parser_feed(key, smtp_command->parser, smtp_command->current_state, buffer_read(buffer));
+        smtp_command->current_state = state;
+    }
+    
+    return state;
 }
 
 void finish_command_parsing(){

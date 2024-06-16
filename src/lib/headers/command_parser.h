@@ -3,6 +3,7 @@
 
 #include <parser.h>
 #include <selector.h>
+#include <buffer.h>
 
 #define STATES_QTY 5
 /** Todos los verbos son de 4 caracteres, exceptuando STARTTLS
@@ -23,6 +24,8 @@
 typedef struct smtp_command
 {
     parser_definition * parser;
+    size_t current_state;
+    bool ended;
     //Guardamos espacio extra para el \0
     char command[MAX_COMMAND_LEN + 1];
     //Cada argumento esta separado por un espacio
@@ -37,8 +40,10 @@ void init_command_parsing(smtp_command * smtp_command);
 /** Configuracion del parser de comandos, armamado de la estructura parser_definition, setup de vectores de chars aceptados**/
 void parser_configuration();
 
-/** Encargada de ir parseando el comando, es la funcion que llamara a process_char. Retorna el estado que corresponde **/
-int parse_command(struct selector_key * key);
+/** Encargada de ir parseando el comando, es la funcion que llamara a process_char. Necesita del buffer para poder consumir el char 
+ * Retorna el estado que corresponde 
+ * **/
+int parse_command(struct selector_key * key, smtp_command * smtp_command, struct buffer * buffer);
 
 void finish_command_parsing();
 
