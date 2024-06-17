@@ -48,6 +48,7 @@ struct request
 
 enum request_state
 {
+	request_flush = -1,
 	request_verb,
 	request_mail,
 	request_helo,
@@ -71,6 +72,9 @@ struct request_parser
 /** inicializa el parser */
 void request_parser_init(struct request_parser* p);
 
+/** inicializa el parser para la lectura de data */
+void request_parser_data_init(struct request_parser* p);
+
 /** entrega un byte al parser. retorna true si se llego al final  */
 enum request_state request_parser_feed(struct request_parser* p, const uint8_t c);
 
@@ -90,6 +94,11 @@ enum request_state request_consume(buffer* b, struct request_parser* p, bool* er
  * En caso de haber terminado permite tambien saber si se debe a un error
  */
 bool request_is_done(const enum request_state st, bool* errored);
+
+bool request_is_data(const enum request_state st);
+
+/** Devuelve verdadero si es necesario flushear al archivo de salida */
+bool request_file_flush(enum request_state st, struct request_parser* p);
 
 void request_close(struct request_parser* p);
 

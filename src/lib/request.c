@@ -83,7 +83,7 @@ mail(const uint8_t c, struct request_parser* p)
 
 	switch (c) {
 		case '<':
-			if (p->i == 1) {  // p->i == 1 because we read char ' '. FIXME
+			if (p->i == 0) {
 				next = request_mail;
 			} else {
 				next = request_error;
@@ -132,7 +132,7 @@ data_body(const uint8_t c, struct request_parser* p)
 			p->request->data[p->i++] = (char)c;
 			next = request_data_body;
 		} else {
-			next = request_error;
+			next = request_flush;
 		}
 	}
 	return next;
@@ -141,6 +141,13 @@ extern void
 request_parser_init(struct request_parser* p)
 {
 	p->state = request_verb;
+	p->i = 0;
+}
+
+extern void
+request_parser_data_init(struct request_parser* p)
+{
+	p->state = request_data_body;
 	p->i = 0;
 }
 
@@ -156,7 +163,7 @@ request_parser_feed(struct request_parser* p, const uint8_t c)
 		case request_mail:
 			next = mail(c, p);
 			break;
-		case request_data:
+		case request_data:  // no se debería llegar nunca acá, pues se hace un cambio de estado de la stm del smtp.c
 			if (c == '\n') {
 				p->i = 0;
 				next = request_data_body;
@@ -202,6 +209,26 @@ request_is_done(const enum request_state st, bool* errored)
 	return st >= request_done;
 }
 
+extern bool
+request_is_data(const enum request_state st)
+{
+	return st == request_data;
+}
+
+extern bool
+request_is_data_body(const enum request_state st)
+{
+	return st == request_data_body;
+}
+
+extern bool
+request_file_flush(enum request_state st, struct request_parser* p)
+{
+	// es necesario flushear si estamos en data_body y si el buffer está lleno
+	// o bien si estamos en done
+	return st == request_flush || p->state == request_done;
+}
+
 extern enum request_state
 request_consume(buffer* b, struct request_parser* p, bool* errored)
 {
@@ -209,13 +236,30 @@ request_consume(buffer* b, struct request_parser* p, bool* errored)
 	while (buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
 		st = request_parser_feed(p, c);
-		if (request_is_done(st, errored)) {
+		if (request_is_done(st, errored) || st == request_flush) {
 			break;
+		}
+		if (request_is_data(st)) {
+			return st;
 		}
 	}
 	return st;
 }
-
+/*
+extern enum request_state
+request_data_consume(buffer* b, struct request_parser* p, bool* errored)
+{
+    enum request_state st = p->state;
+    while (buffer_can_read(b)) {
+        const uint8_t c = buffer_read(b);
+        st = request_parser_feed(p, c);
+        if (request_is_done(st, errored) || st == request_flush) {
+            break;
+        }
+    }
+    return st;
+}
+*/
 void
 request_close(struct request_parser* p)
 {
