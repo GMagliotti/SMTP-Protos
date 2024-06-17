@@ -261,6 +261,12 @@ request_read_handler(struct selector_key* key)
 				ret = request_process(key);
 			} else {
 				buffer_reset(&data->read_buffer);
+				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+					uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+					memcpy(ptr, "502 5.5.2 Error: command not recognized\n", 41);
+					buffer_write_adv(&data->write_buffer, 41);
+					ret = REQUEST_WRITE;
+				}
 			}
 		}
 
