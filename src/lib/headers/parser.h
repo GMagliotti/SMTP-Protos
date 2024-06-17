@@ -12,78 +12,76 @@
  */
 #include <stddef.h>
 #include <stdint.h>
+#include <selector.h>
 
+/** Restamos todos los ASCII que no sean printeables exceptuando por ' ', '\r', '\n' **/
 /**
- * Evento que retorna el parser.
- * Cada tipo de evento tendrá sus reglas en relación a data.
- */
-struct parser_event
+ ! (33) -> 0 (33-32-1)
+ " (34) -> 1 (34-32-1)
+ ...
+ ? (127) -> 94 (127-32-1)
+ ' ' -> 95
+ '\n'-> 96
+ '\r'->97
+ **/
+#define PRINTABLE_ASCII_CHARS 127 - 32 + 3
+#define CHARS_ARRAY_SHIFT 32
+#define SPACE_INDEX 95
+#define LF_INDEX 96
+#define CR_INDEX 97
+
+/** Funcion de transicion de un estado a otro, recibe todas las funciones de callback de handler y char procesado **/
+typedef void (* parser_state_function) (struct selector_key * key, u_int8_t c);
+
+/** Describe un estado por su id, funciones de llegada y salida, y un booleano que indica si es final o no **/
+typedef struct parser_state
 {
-	/** tipo de evento */
-	unsigned type;
-	/** caracteres asociados al evento */
-	uint8_t data[3];
-	/** cantidad de datos en el buffer `data' */
-	uint8_t n;
+	unsigned id;
+	parser_state_function on_arrival;
+	parser_state_function on_departure;
+	bool is_final;
+} parser_state;
 
-	/** lista de eventos: si es diferente de null ocurrieron varios eventos */
-	struct parser_event* next;
-};
+/** Describe la transicion de un estado a otro. Compuesta por origen, destino y caracteres aceptados **/
+/** Los chars aceptados por la transicion estaran marcados en 1 **/
+typedef struct parser_transition {
+	unsigned from_state;
+	unsigned to_state;
+	bool accepted_chars[PRINTABLE_ASCII_CHARS];
+} parser_transition;
 
-/** describe una transición entre estados  */
-struct parser_state_transition
+/** Declaracion completa de una máquina de estados */
+typedef struct parser_definition
 {
-	/* condición: un caracter o una clase de caracter. Por ej: '\r' */
-	int when;
-	/** descriptor del estado destino cuando se cumple la condición */
-	unsigned dest;
-	/** acción 1 que se ejecuta cuando la condición es verdadera. requerida. */
-	void (*act1)(struct parser_event* ret, const uint8_t c);
-	/** otra acción opcional */
-	void (*act2)(struct parser_event* ret, const uint8_t c);
-};
+	size_t states_count;
+	parser_state * states;
+	parser_state * initial_state;
+	parser_state * error_state;
+	/** [{transiciones estado 0, transiciones 1, ..., transiciones N}] **/
+	parser_transition ** transitions;
+	/** [#transiciones estado 0, #transiciones 1, ..., #transiciones N] **/
+	size_t * transitions_per_state;
+} parser_definition;
 
-/** predicado para utilizar en `when' que retorna siempre true */
-static const int ANY = 1 << 9;
-
-/** declaración completa de una máquina de estados */
-struct parser_definition
-{
-	/** cantidad de estados */
-	const unsigned states_count;
-	/** por cada estado, sus transiciones */
-	const struct parser_state_transition** states;
-	/** cantidad de estados por transición */
-	const size_t* states_n;
-
-	/** estado inicial */
-	const unsigned start_state;
-};
 
 /**
- * inicializa el parser.
- *
- * `classes`: caracterización de cada caracter (256 elementos)
+ * El usuario alimenta el parser con un caracter, y el parser retorna el id del estado al que debera redirigirse. 
  */
-struct parser* parser_init(const unsigned* classes, const struct parser_definition* def);
+int parser_feed(struct selector_key * key, parser_definition * parser, unsigned current_state_id, uint8_t c);
 
-/** destruye el parser */
-void parser_destroy(struct parser* p);
+/*
+ * Se agregan a la transicion aquellos chars aceptados
+*/
+void add_accepted_chars_to_transition(parser_transition * transition, u_int8_t * array_chars);
 
-/** permite resetear el parser al estado inicial */
-void parser_reset(struct parser* p);
+/*
+ * Se agregan a la transicion aquellos chars rechazados
+*/
+void add_rejected_chars_to_transition(parser_transition * transition, u_int8_t * array_chars);
 
 /**
- * el usuario alimenta el parser con un caracter, y el parser retorna un evento
- * de parsing. Los eventos son reusado entre llamadas por lo que si se desea
- * capturar los datos se debe clonar.
+ * Retorna si el estado es final o no
  */
-const struct parser_event* parser_feed(struct parser* p, const uint8_t c);
-
-/**
- * En caso de la aplicacion no necesite clases caracteres, se
- * provee dicho arreglo para ser usando en `parser_init'
- */
-const unsigned* parser_no_classes(void);
+bool is_final(parser_state * state);
 
 #endif

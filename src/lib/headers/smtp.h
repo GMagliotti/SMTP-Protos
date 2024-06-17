@@ -4,6 +4,7 @@
 #include "request.h"
 #include "selector.h"
 #include "stm.h"
+#include "command_parser.h"
 
 #include <netdb.h>
 #include <stdbool.h>
@@ -31,14 +32,28 @@ typedef struct smtp_data {
   struct buffer write_buffer;
 
   // parser
-
   struct request_parser request_parser;
   struct request request;
+  smtp_command command_parser;
 
   // raw buffer
   uint8_t raw_buff_write[BUFFER_SIZE];
   uint8_t raw_buff_read[BUFFER_SIZE];
 } smtp_data;
+
+typedef struct smtp_transaction {
+	int id;
+
+	char * mail_from;
+	char ** rcpt_to;
+
+	/* The associated DATA command. This is NULL until the last DATA/BDAT
+	   command is issued.
+	 */
+	char *cmd;
+
+	bool finished:1;
+} smtp_transaction;
 
 enum smtp_states {
 
