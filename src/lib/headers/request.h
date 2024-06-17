@@ -37,23 +37,25 @@
  *  - Address: IPAddress (4 y 6), DomainNameAdddres
  */
 
+#define DATA_SIZE 1024
 
-
-struct request {
-    char verb[16];
-    char arg[256];
-    char data[1024];
+struct request
+{
+	char verb[16];
+	char arg[256];
+	char data[DATA_SIZE];
 };
 
-enum request_state {
-    request_verb,
-    request_mail,
-    request_helo,
-    request_data,
-    request_data_body,
-    request_cr,
-    request_done,
-    request_error
+enum request_state
+{
+	request_verb,
+	request_mail,
+	request_helo,
+	request_data,
+	request_data_body,
+	request_cr,
+	request_done,
+	request_error
 };
 
 struct request_parser

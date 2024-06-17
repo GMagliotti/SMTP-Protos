@@ -47,8 +47,10 @@ verb(const uint8_t c, struct request_parser* p)
 		case '\r':
 			if (strcasecmp(p->request->verb, "DATA") == 0) {
 				p->i = 0;
+				// we enter in data mode
+				// we need to write the email to an output file.
 
-				next = request_cr;
+				next = request_data;
 			} else {
 				next = request_error;
 			}
@@ -56,7 +58,7 @@ verb(const uint8_t c, struct request_parser* p)
 
 		case ' ':
 			p->request->verb[p->i] = '\0';
-			if (strcasecmp(p->request->verb, "EHLO") == 0) {
+			if (strcasecmp(p->request->verb, "EHLO") == 0 || strcasecmp(p->request->verb, "HELO") == 0) {
 				p->i = 0;
 				next = request_helo;
 				break;
@@ -81,7 +83,7 @@ mail(const uint8_t c, struct request_parser* p)
 
 	switch (c) {
 		case '<':
-			if (p->i == 0) {
+			if (p->i == 1) {  // p->i == 1 because we read char ' '. FIXME
 				next = request_mail;
 			} else {
 				next = request_error;
@@ -123,12 +125,12 @@ data_body(const uint8_t c, struct request_parser* p)
 			p->request->data[p->i - 2] = '\0';
 			next = request_done;
 		} else {
-			next = request_data;
+			next = request_data_body;
 		}
 	} else {
 		if (p->i < sizeof(p->request->data) - 1) {
 			p->request->data[p->i++] = (char)c;
-			next = request_data;
+			next = request_data_body;
 		} else {
 			next = request_error;
 		}

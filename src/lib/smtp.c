@@ -326,8 +326,8 @@ request_process(struct selector_key* key)
 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
 			memcpy(data->rcpt_to, data->request_parser.request->arg, N(data->request_parser.request->arg));
 			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-			memcpy(ptr, "ACA EMPIEZA EL DATA\n", 21);
-			buffer_write_adv(&data->write_buffer, 21);
+			memcpy(ptr, "354 End data with <CR><LF>.<CR><LF>\n", 36);  // FIXME: no se si es correcto
+			buffer_write_adv(&data->write_buffer, 36);
 			ret = REQUEST_WRITE;
 		}
 	} else {
