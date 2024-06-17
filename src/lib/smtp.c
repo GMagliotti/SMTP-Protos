@@ -61,11 +61,14 @@ Cada estado va a tener un handlers que hay que definir
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 unsigned int request_read_handler(struct selector_key* key);
+// unsigned int request_data_handler(struct selector_key* key);
 unsigned int request_write_handler(struct selector_key* key);
+unsigned int request_process(struct selector_key* key);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
 void smtp_done(selector_key* key);
@@ -79,12 +82,17 @@ static const struct state_definition smtp_states[] = {
 	    .state = REQUEST_READ,
 	    .on_read_ready = request_read_handler,
 	    .on_arrival = request_read_init,
-		.on_departure = request_read_close,
+	    .on_departure = request_read_close,
 	},
 
 	{
 	    .state = REQUEST_WRITE,
 	    .on_write_ready = request_write_handler,
+	},
+	{
+	    .state = REQUEST_DATA,
+	    .on_read_ready = NULL,
+
 	},
 	{
 	    .state = DONE,
@@ -192,7 +200,7 @@ smtp_passive_accept(selector_key* key)
 }
 
 // REQUEST WRITE HANDLERS
-unsigned int
+enum smtp_states
 request_write_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
@@ -224,21 +232,18 @@ request_write_handler(struct selector_key* key)
 void
 request_read_init(unsigned int state, struct selector_key* key)
 {
-	if (state != REQUEST_READ) {
-		smtp_data* data = ATTACHMENT(key);
-		data->request_parser.request = &data->request;
-		request_parser_init(&data->request_parser);
-	}
+	printf("request_read_init\n %d", state);
+	smtp_data* data = ATTACHMENT(key);
+	data->request_parser.request = &data->request;
+	request_parser_init(&data->request_parser);
 }
 
 // REQUEST READ HANDLERS
-unsigned int
+enum smtp_states
 request_read_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
-	// read data from socket
 	size_t count;
-	// pido un puntero para escribir, tambien me dice cuanto puedo escribir
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
 
@@ -246,28 +251,79 @@ request_read_handler(struct selector_key* key)
 
 	if (recv_bytes > 0) {
 		buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
-		// const enum smtp_states st = stm_handler_read(&data->stm, key);
-
 		// procesamiento
 		bool error = false;
 		int st = request_consume(&data->read_buffer, &data->request_parser, &error);
-			if(request_is_done(st, 0)) {
-				// armado de la rta
-				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-				ret = REQUEST_WRITE;
-
-				uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-				// acá entraría el tema del parser
-				memcpy(ptr, "200\r\n", 5);
-				buffer_write_adv(&data->write_buffer, 5);
-
+		if (request_is_done(st, 0)) {
+			// armado de la rta
+			if (!error) {
+				// no lei todos los bytes del buffer, pero quiero consumirlos como si hubiera terminado
+				ret = request_process(key);
 			} else {
-				ret = ERROR;
+				buffer_reset(&data->read_buffer);
 			}
 		}
 
-		
+	} else {
+		ret = ERROR;
+	}
+	return ret;
+}
+// unsigned int request_data_handler(struct selector_key* key){
+// 	/*
+// 		Tenemos que leer hasta encontrar \r\n .
+// 	*/
 
+// }
+enum smtp_states
+request_process(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+
+	int ret;
+	size_t count;
+
+	if (strcasecmp(data->request_parser.request->verb, "HELO") == 0 ||
+	    strcasecmp(data->request_parser.request->verb, "EHLO") == 0) {
+		// cambiar el estado a REQUEST_READ
+		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+			// acá entraría el tema del parser
+			memcpy(ptr,
+			       "250-foo.pdc\r\n250-PIPELINING\r\n250-SIZE "
+			       "10240000\r\n250-VRFY\r\n250-ETRN\r\n250-STARTTLS\r\n250-ENHANCEDSTATUSCODES\r\n250-8BITMIME\r\n250-"
+			       "DSN\r\n250-SMTPUTF8\r\n250 CHUNKING\r\n",
+			       159);
+			buffer_write_adv(&data->write_buffer, 159);
+			ret = REQUEST_WRITE;
+		}
+	} else if (strcasecmp(data->request_parser.request->verb, "MAIL FROM") == 0) {
+		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+			memcpy(data->mail_from, data->request_parser.request->arg, N(data->request_parser.request->arg));
+			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+			memcpy(ptr, "250 2.1.0 Ok\n", 14);
+			buffer_write_adv(&data->write_buffer, 14);
+			ret = REQUEST_WRITE;
+		}
+
+	} else if (strcasecmp(data->request_parser.request->verb, "RCPT TO") == 0) {
+		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+			memcpy(data->rcpt_to, data->request_parser.request->arg, N(data->request_parser.request->arg));
+			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+			memcpy(ptr, "250 2.1.5 Ok\n", 14);
+			buffer_write_adv(&data->write_buffer, 14);
+			ret = REQUEST_WRITE;
+		}
+
+	} else if (strcasecmp(data->request_parser.request->verb, "DATA") == 0) {
+		// cambiar el estado a REQUEST_DATA
+		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+			memcpy(data->rcpt_to, data->request_parser.request->arg, N(data->request_parser.request->arg));
+			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+			memcpy(ptr, "ACA EMPIEZA EL DATA\n", 21);
+			buffer_write_adv(&data->write_buffer, 21);
+			ret = REQUEST_WRITE;
+		}
 	} else {
 		ret = ERROR;
 	}

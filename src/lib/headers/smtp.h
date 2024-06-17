@@ -16,6 +16,8 @@
 #define LOCAL_USER_NAME_SIZE 64
 #define DOMAIN_NAME_SIZE 255
 #define COMMAND_LINE_SIZE 512
+#define MAIL_SIZE 64
+#define BODY_SIZE 1024
 
 typedef struct smtp_data {
   struct state_machine stm;
@@ -35,6 +37,12 @@ typedef struct smtp_data {
   struct request_parser request_parser;
   struct request request;
 
+  uint8_t mail_from[MAIL_SIZE];
+  uint8_t rcpt_to[MAIL_SIZE];
+  uint8_t data[BODY_SIZE];
+
+
+
   // raw buffer
   uint8_t raw_buff_write[BUFFER_SIZE];
   uint8_t raw_buff_read[BUFFER_SIZE];
@@ -44,10 +52,7 @@ enum smtp_states {
 
   REQUEST_READ = 0,
   REQUEST_WRITE,
-  // EHLO = 0,
-  // FROM,
-  // RCPT,
-  // DATA,
+  REQUEST_DATA,
   DONE,
   ERROR,
   // definir los estados de la maquina de estados del protocolo SMTP

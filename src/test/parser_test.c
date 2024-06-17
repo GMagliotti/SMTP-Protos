@@ -1,6 +1,4 @@
 #include "parser.h"
-
-#include <check.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -90,16 +88,15 @@ static struct parser_definition definition = {
 
 //// TEST
 
-static void
-assert_eq(const unsigned type, const int c, const struct parser_event* e)
-{
-	ck_assert_ptr_eq(0, e->next);
-	ck_assert_uint_eq(1, e->n);
-	ck_assert_uint_eq(type, e->type);
-	ck_assert_uint_eq(c, e->data[0]);
+void assert_eq(const unsigned type, const int c, const struct parser_event* e) {
+    if (type != e->type || 1 != e->n || c != e->data[0]) {
+        fprintf(stderr, "Assertion failed: expected (type=%u, n=1, data[0]=%d), but got (type=%u, n=%d, data[0]=%d)\n",
+                type, c, e->type, e->n, e->data[0]);
+        exit(EXIT_FAILURE);
+    }
 }
 
-START_TEST(test_basic)
+void test_basic()
 {
 	struct parser* parser = parser_init(parser_no_classes(), &definition);
 	assert_eq(FOO, 'f', parser_feed(parser, 'f'));
@@ -109,37 +106,12 @@ START_TEST(test_basic)
 
 	parser_destroy(parser);
 }
-END_TEST
 
-Suite*
-suite(void)
-{
-	Suite* s;
-	TCase* tc;
-
-	s = suite_create("parser_utils");
-
-	/* Core test case */
-	tc = tcase_create("parser_utils");
-
-	tcase_add_test(tc, test_basic);
-	suite_add_tcase(s, tc);
-
-	return s;
-}
 
 int
 main(void)
 {
-	int number_failed;
-	Suite* s;
-	SRunner* sr;
-
-	s = suite();
-	sr = srunner_create(s);
-
-	srunner_run_all(sr, CK_NORMAL);
-	number_failed = srunner_ntests_failed(sr);
-	srunner_free(sr);
-	return (number_failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
+	test_basic();
+    printf("All tests passed.\n");
+	return EXIT_SUCCESS;
 }
