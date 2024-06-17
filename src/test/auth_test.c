@@ -1,12 +1,10 @@
-#include "authentication.h"
+#define USER_DB_SIZE       3
+#define AUTH_PLAIN_MAX_LEN 256
 
-#include <string.h>  // For strcmp
-
-// Simulated user database (replace with actual storage)
-
-const char* valid_users[USER_DB_SIZE][2] = { { "user1", "password1" },
-	                                         { "user2", "password2" },
-	                                         { "user3", "password3" } };
+#include <assert.h>       // For assert
+#include <openssl/evp.h>  // For base64 encoding/decoding
+#include <stdbool.h>      // For bool type
+#include <string.h>       // For strcmp
 
 int
 base64_decode(const char* input, int length, unsigned char* output)
@@ -27,7 +25,7 @@ base64_decode(const char* input, int length, unsigned char* output)
 	return output_length;
 }
 
-// Simulated user database (replace with actual storage)
+// simulated
 const char* valid_users[USER_DB_SIZE][2] = { { "user1", "password1" },
 	                                         { "user2", "password2" },
 	                                         { "user3", "password3" } };
@@ -70,4 +68,39 @@ authenticate_login(const char* username, const char* password)
 		}
 	}
 	return false;
+}
+
+void
+test_auth_plain_init()
+{
+	// Test case 1: Valid username and password
+	const char* auth_data = "AHVzZXIxAHBhc3N3b3JkMQ==";  // base64("\0user1\0password1")
+	assert(authenticate_plain(auth_data) == true);
+
+	// Test case 2: Invalid username and password
+	auth_data = "dXNlcjF1c2VyNA==";  // base64("\0user1\0password4")
+	assert(authenticate_plain(auth_data) == false);
+}
+
+void
+test_auth_login_init()
+{
+	// Test case 1: Valid username and password
+	const char* username = "user1";
+	const char* password = "password1";
+	assert(authenticate_login(username, password) == true);
+
+	// Test case 2: Invalid username and password
+	username = "user1";
+	password = "password4";
+	assert(authenticate_login(username, password) == false);
+}
+
+int
+main()
+{
+	test_auth_plain_init();
+	test_auth_login_init();
+	printf("All tests passed successfully.\n");
+	return 0;
 }
