@@ -51,6 +51,8 @@ verb(const uint8_t c, struct request_parser* p)
 				// we need to write the email to an output file.
 
 				next = request_data;
+			} else if (strcasecmp(p->request->verb, "QUIT") == 0) {
+				next = request_done;
 			} else {
 				next = request_error;
 			}

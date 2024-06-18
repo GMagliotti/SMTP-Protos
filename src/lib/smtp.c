@@ -66,7 +66,10 @@ Cada estado va a tener un handlers que hay que definir
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
+
+#define MS_TEXT_SIZE 13
 
 unsigned int request_read_handler(struct selector_key* key);
 // unsigned int request_data_handler(struct selector_key* key);
@@ -79,6 +82,7 @@ const fd_handler* get_smtp_handler(void);
 void request_data_init(unsigned int state, struct selector_key* key);
 void request_data_close(unsigned int state, struct selector_key* key);
 unsigned int request_data_handler(struct selector_key* key);
+void on_done_init(const unsigned state, struct selector_key* key);
 
 static const struct state_definition smtp_states[] = {
 	// definir los estados de la maquina de estados del protocolo SMTP
@@ -104,6 +108,7 @@ static const struct state_definition smtp_states[] = {
 	},
 	{
 	    .state = DONE,
+	    .on_arrival = on_done_init,
 	},
 	{
 	    .state = ERROR,
@@ -340,6 +345,13 @@ request_process(struct selector_key* key)
 			buffer_write_adv(&data->write_buffer, 30);
 			ret = REQUEST_WRITE;
 		}
+	} else if (strcasecmp(data->request_parser.request->verb, "QUIT") == 0) {
+		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+			memcpy(ptr, "221 2.0.0 Bye\n", 14);
+			buffer_write_adv(&data->write_buffer, 14);
+			ret = DONE;
+		}
 	} else {
 		ret = ERROR;
 	}
@@ -439,15 +451,25 @@ request_data_init(unsigned int state, struct selector_key* key)
 {
 	printf("request_data_init\n %d", state);
 	// we need to print message 354 End data with <CR><LF>.<CR><LF>\n
-	size_t count;
-	uint8_t* ptr = buffer_write_ptr(&ATTACHMENT(key)->write_buffer, &count);
-	memcpy(ptr, "354 End data with <CR><LF>.<CR><LF>\n", 36);
-	buffer_write_adv(&ATTACHMENT(key)->write_buffer, 36);
+
+	const char* message = "354 End data with <CR><LF>.<CR><LF>\n";
+	size_t message_len = strlen(message);
+
+	ssize_t bytes_sent = send(key->fd, message, message_len, 0);
+	if (bytes_sent < 0) {
+		perror("send");
+		return;
+	} else if ((size_t)bytes_sent < message_len) {
+		perror("send");
+		return;
+	}
 
 	// we need to re-open the request_parser to start reading the data
 	smtp_data* data = ATTACHMENT(key);
 	data->request_parser.request = &data->request;
 	request_parser_data_init(&data->request_parser);
+	char data_verb[] = "DATA";
+	strcpy(data->request_parser.request->verb, data_verb);
 
 	// We need to create a file in the maildir associated with the client
 	// For doing so, we need to get the maildir associated with the client
@@ -460,10 +482,12 @@ request_data_init(unsigned int state, struct selector_key* key)
 		return;
 	}
 
-	char filename[100] = { 0 }; // FIXME: filename should be somthing like time in ms
-	snprintf(filename, sizeof(filename), "%s/out", maildir);
+	char filename[MS_TEXT_SIZE + DOMAIN_NAME_SIZE + LOCAL_USER_NAME_SIZE] = { 0 };
+	time_t ms = time(NULL) * 1000;
+	// filename like mail/<domain>/<user>/<timestamp>
+	snprintf(filename, sizeof(filename), "%s/%ld", maildir, ms);
 
-	int fd = open(filename, O_CREAT | O_WRONLY, 0644);
+	int fd = open(filename, O_CREAT | O_WRONLY, 0777);
 	if (fd < 0) {
 		perror("open");
 		return;
@@ -473,8 +497,8 @@ request_data_init(unsigned int state, struct selector_key* key)
 
 	data->output_fd = fd;
 
-	// We will write periodically to this file. Every time the buffer in the parser is full, we will write to the file
-	// Also, we will write if we find a \r\n.\r\n in the buffer
+	// We will write periodically to this file. Every time the buffer in the parser is full, we will write to the
+	// file Also, we will write if we find a \r\n.\r\n in the buffer
 }
 
 void
@@ -503,8 +527,8 @@ request_data_handler(struct selector_key* key)
 		bool error = false;
 		int st = request_consume(&data->read_buffer,
 		                         &data->request_parser,
-		                         &error);  // no necesitamos usar otro parser distinto. Ya se encuentra implementada la
-		                                   // lógica de data en este
+		                         &error);  // no necesitamos usar otro parser distinto. Ya se encuentra implementada
+		                                   // la lógica de data en este
 		if (request_is_done(st, 0)) {
 			// armado de la rta
 			if (!error) {
@@ -521,8 +545,8 @@ request_data_handler(struct selector_key* key)
 			}
 		}
 		if (request_file_flush(st,
-		                       &data->request_parser)) {  // request_file_flush returns true if the buffer is full or
-			                                              // the request is done
+		                       &data->request_parser)) {  // request_file_flush returns true if the buffer is full
+			                                              // or the request is done
 
 			int fd = data->output_fd;
 			char* ptr = data->request_parser.request->data;
@@ -540,4 +564,13 @@ request_data_handler(struct selector_key* key)
 		ret = ERROR;
 	}
 	return ret;
+}
+
+void
+on_done_init(const unsigned state, struct selector_key* key)
+{
+	printf("on_done_init\n %d", state);
+	smtp_data* data = ATTACHMENT(key);
+	free(data);
+	// anything else to free?
 }
