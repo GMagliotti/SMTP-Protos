@@ -69,7 +69,9 @@ Cada estado va a tener un handlers que hay que definir
 #include <time.h>
 #include <unistd.h>
 
-#define MS_TEXT_SIZE 13
+#define MS_TEXT_SIZE           13
+#define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
+#define MAIL_DIR_SIZE          4
 
 unsigned int request_read_handler(struct selector_key* key);
 // unsigned int request_data_handler(struct selector_key* key);
@@ -397,9 +399,10 @@ create_directory_if_not_exists(char* maildir)
 }
 
 static char*
-get_maildir_and_create(char* mail_from)
+get_and_create_maildir(char* mail_from)
 {
-	char* maildir = malloc(100);  // Consider dynamic sizing based on mail_from length
+	int maildir_size = MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE;
+	char* maildir = malloc(maildir_size);  // Consider dynamic sizing based on mail_from length
 	if (maildir == NULL) {
 		perror("malloc");
 		return NULL;
@@ -411,18 +414,13 @@ get_maildir_and_create(char* mail_from)
 		return NULL;
 	}
 	domain++;
-	char* user = strndup(mail_from, domain - mail_from - 1);
-	if (user == NULL) {
-		free(maildir);
-		perror("strndup");
-		return NULL;
-	}
-	snprintf(maildir, 100, "mail/%s/%s", domain, user);
+	char local_user[LOCAL_USER_NAME_SIZE] = { 0 };
+	strncpy(local_user, mail_from, domain - mail_from - 1);
+	snprintf(maildir, maildir_size, "mail/%s/%s", domain, local_user);
 
 	// Create mail if it doesn't exist
 	if (create_directory_if_not_exists("mail") == -1) {
 		free(maildir);
-		free(user);
 		return NULL;
 	}
 
@@ -431,18 +429,15 @@ get_maildir_and_create(char* mail_from)
 	snprintf(domain_dir, sizeof(domain_dir), "mail/%s", domain);
 	if (create_directory_if_not_exists(domain_dir) == -1) {
 		free(maildir);
-		free(user);
 		return NULL;
 	}
 
 	// Create mail/<domain>/<user> if it doesn't exist
 	if (create_directory_if_not_exists(maildir) == -1) {
 		free(maildir);
-		free(user);
 		return NULL;
 	}
 
-	free(user);
 	return maildir;
 }
 
@@ -476,16 +471,25 @@ request_data_init(unsigned int state, struct selector_key* key)
 	// My server doesn't work as a relay server, so we just need to create a file in the maildir associated with the
 	// client
 
-	char* maildir = get_maildir_and_create((char*)data->mail_from);
+	char* maildir = get_and_create_maildir((char*)data->mail_from);
 	if (maildir == NULL) {
-		perror("get_maildir_and_create");
+		perror("get_and_create_maildir");
 		return;
 	}
 
-	char filename[MS_TEXT_SIZE + DOMAIN_NAME_SIZE + LOCAL_USER_NAME_SIZE] = { 0 };
-	time_t ms = time(NULL) * 1000;
-	// filename like mail/<domain>/<user>/<timestamp>
-	snprintf(filename, sizeof(filename), "%s/%ld", maildir, ms);
+	// now we create tmp dir within maildir
+	char full_dir[MAIL_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = { 0 };
+	snprintf(full_dir, sizeof(full_dir), "%s/tmp", maildir);
+	if (create_directory_if_not_exists(full_dir) == -1) {
+		perror("create_directory_if_not_exists");
+		return;
+	}
+
+	char filename[MAIL_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
+	              MS_TEXT_SIZE] = { 0 };
+	time_t ms = time(NULL);
+	// filename like mail/<domain>/<user>/tmp/<timestamp>
+	snprintf(filename, sizeof(filename), "%s/tmp/%ld", maildir, ms);
 
 	int fd = open(filename, O_CREAT | O_WRONLY, 0777);
 	if (fd < 0) {
