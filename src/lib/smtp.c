@@ -275,23 +275,7 @@ request_read_handler(struct selector_key* key)
 		buffer_write_adv(&data->read_buffer, recv_bytes);  
 		selector_set_interest_key(key, OP_WRITE);
 		return REQUEST_WRITE;
-		/*
-		parse_command(key, &data->command_parser, &data->read_buffer);
-			if(&data->command_parser.ended || &data->command_parser.error) {
-				// armado de la rta
-				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-				ret = REQUEST_WRITE;
-
-				uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-				// acá entraría el tema del parser
-				memcpy(ptr, "200\r\n", 5);
-				buffer_write_adv(&data->write_buffer, 5);
-
-			} else {
-				ret = ERROR;
-			}
-		}
-		*/
+		
 	} else if (recv_bytes == 0) {
 		return DONE;
 	} else return ERROR;
