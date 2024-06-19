@@ -55,6 +55,7 @@ Cada estado va a tener un handlers que hay que definir
 
 #include "buffer.h"
 #include "selector.h"
+#include "string_utils.h"
 
 #include <netdb.h>
 #include <stdbool.h>
@@ -69,6 +70,7 @@ unsigned int request_write_handler(struct selector_key* key);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
 void smtp_done(selector_key* key);
+static void handle_request(struct selector_key * key, char msg[MAX_COMMAND_LEN]);
 const fd_handler* get_smtp_handler(void);
 
 static const struct state_definition smtp_states[] = {
@@ -182,6 +184,7 @@ smtp_passive_accept(selector_key* key)
 	stm_init(&data->stm);
 
 	memcpy(&data->raw_buff_write, "220 Bienvenido al servidor SMTP\n\0", 32);
+	printf("220 Bienvenido al servidor SMTP\n\0");
 	buffer_write_adv(&data->write_buffer, 32);
 
 	selector_status status = selector_register(key->s, new_socket, get_smtp_handler(), OP_WRITE, data);
@@ -198,31 +201,36 @@ unsigned int
 request_write_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
-	uint8_t* ptr;
-	size_t count;
-	ssize_t send_bytes;
-	buffer* buff = &data->write_buffer;
 
-	ptr = buffer_read_ptr(buff, &count);
+	buffer * output_buffer = &data->write_buffer;
+	buffer * input_buffer = &data->read_buffer;
 
-	send_bytes = send(key->fd, ptr, count, MSG_NOSIGNAL);
-
-	int ret;
-	if (send_bytes >= 0) {
-		buffer_read_adv(buff, send_bytes);  // avisa que hay send_bytes bytes menos por mandar (leer del buffer)
-		if (!buffer_can_read(buff)) {
-			// si no queda nada para mandar (leer del buffer write)
-			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
-				ret = REQUEST_READ;
-			} else {
-				ret = ERROR;
-			}
-		}
-	} else {
-		ret = ERROR;
+	//Veamos que efectivamente haya algo para leer
+	if(!buffer_can_read(input_buffer)){
+		selector_set_interest_key(key, OP_READ);
+		return REQUEST_READ;
 	}
-	return ret;
+
+	smtp_command * smtp_command = &data->command_parser;
+	parse_command(key, smtp_command, input_buffer);
+	if(!smtp_command->ended){
+		selector_set_interest_key(key, OP_READ);
+		return REQUEST_READ;
+	}
+
+	//Tenemos una linea!
+	char msg[MAX_LINE_LEN];
+	//Procesamos!
+	handle_request(key, msg);
+	
+	//Veamos si quedan cosas por leer
+	if(buffer_can_read(input_buffer)) {
+		selector_set_interest_key(key, OP_WRITE);
+	} else {
+        selector_set_interest_key(key, OP_READ);
+    }
 }
+
 void
 request_read_init(unsigned int state, struct selector_key* key)
 {
@@ -238,21 +246,36 @@ unsigned int
 request_read_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
-	// read data from socket
-	size_t count;
-	// pido un puntero para escribir, tambien me dice cuanto puedo escribir
+	//Buffer donde se escriben los datos a leer por el servidor
+	buffer * data_buffer = &data->read_buffer;
+	//Podemos escribir en el buffer o todavia hay algo por leer?
+	if(!buffer_can_write(data_buffer)){
+		//Todavia hay por leer
+		buffer_compact(&data->read_buffer);
+		if(!buffer_can_write(data_buffer)){
+			//Si aun asi todavia puedo escribir, hay algo mal
+			if(buffer_can_read(&data->write_buffer)){
+				selector_set_interest_key(key, OP_WRITE);
+				return REQUEST_WRITE;
+			}
+			
+			return ERROR;
+		}
+	}
+	//read data from socket
+	size_t count = 0;
+	//pido un puntero para escribir, tambien me dice cuanto puedo escribir
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
+	//Escribimos en el buffer de lectura lo leido del socket
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
 
-	int ret = REQUEST_READ;
-
+	//Si se leyo algo entramos
 	if (recv_bytes > 0) {
-		buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
-		// const enum smtp_states st = stm_handler_read(&data->stm, key);
-
-		// procesamiento
-		//bool error = false;
-		//int st = request_consume(&data->read_buffer, &data->request_parser, &error);
+		//Hacemos avanzar el puntero de escritura
+		buffer_write_adv(&data->read_buffer, recv_bytes);  
+		selector_set_interest_key(key, OP_WRITE);
+		return REQUEST_WRITE;
+		/*
 		parse_command(key, &data->command_parser, &data->read_buffer);
 			if(&data->command_parser.ended || &data->command_parser.error) {
 				// armado de la rta
@@ -268,13 +291,10 @@ request_read_handler(struct selector_key* key)
 				ret = ERROR;
 			}
 		}
-
-		
-
-	} else {
-		ret = ERROR;
-	}
-	return ret;
+		*/
+	} else if (recv_bytes == 0) {
+		return DONE;
+	} else return ERROR;
 }
 
 void
@@ -283,5 +303,50 @@ request_read_close(unsigned int state, struct selector_key* key)
 	if (state == REQUEST_READ) {
 		smtp_data* data = ATTACHMENT(key);
 		request_close(&data->request_parser);
+	}
+}
+
+static void handle_request(struct selector_key * key, char msg[MAX_COMMAND_LEN])
+{
+	smtp_data * data = ATTACHMENT(key);
+	char * cmd = data->command_parser.command;
+	convertToUpper(cmd);
+
+	if(strcmp(cmd, "EHLO") == 0){
+		sprintf(msg, "EHLO\r\n");
+		printf("EHLO\r\n");
+	} else if(strcmp(cmd, "HELO") == 0) {
+		sprintf(msg, "HELO\r\n");
+		printf("HELO\r\n");
+	} else if(strcmp(cmd, "MAIL") == 0) {
+		sprintf(msg, "MAIL\r\n");
+		printf("MAIL\r\n");
+	} else if(strcmp(cmd, "RCPT") == 0) {
+		sprintf(msg, "RCPT\r\n");
+		printf("RCPT\r\n");
+	} else if(strcmp(cmd, "DATA") == 0) {
+		sprintf(msg, "DATA\r\n");
+		printf("DATA\r\n");
+	} else if(strcmp(cmd, "RSET") == 0) {
+		sprintf(msg, "RSET\r\n");
+		printf("RSET\r\n");
+	} else if(strcmp(cmd, "VRFY") == 0) {
+		sprintf(msg, "VRFY\r\n");
+		printf("VRFY\r\n");
+	} else if(strcmp(cmd, "EXPN") == 0) {
+		sprintf(msg, "EXPN\r\n");
+		printf("EXPN\r\n");
+	} else if(strcmp(cmd, "HELP") == 0) {
+		sprintf(msg, "HELP\r\n");
+		printf("HELP\r\n");
+	} else if(strcmp(cmd, "NOOP") == 0) {
+		sprintf(msg, "NOOP\r\n");
+		printf("NOOP\r\n");
+	} else if(strcmp(cmd, "QUIT") == 0) {
+		sprintf(msg, "QUIT\r\n");
+		printf("QUIT\r\n");
+	} else {
+		sprintf(msg, "Invalid command\r\n");
+		printf("Invalid command\r\n");
 	}
 }

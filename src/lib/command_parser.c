@@ -130,7 +130,11 @@ reading_command(struct selector_key* key, u_int8_t c)
 		// o capaz no se maneja aca, ni idea ajaj
 		return;
 	}
-	smtp_command->command[smtp_command->command_dim] = c;
+	if (c != '\n' && c != '\r')
+	{
+		smtp_command->command[smtp_command->command_dim] = c;
+	}
+	
 	smtp_command->command_dim++;
 
 	return;
@@ -149,7 +153,9 @@ reading_args(struct selector_key* key, u_int8_t c)
 		// o capaz no se maneja aca, ni idea ajaj
 		return;
 	}
-	smtp_command->arg[smtp_command->arg_dim] = c;
+	if(c != '\n' && c != '\r'){
+		smtp_command->arg[smtp_command->arg_dim] = c;
+	}
 	smtp_command->arg_dim++;
 
 	return;
