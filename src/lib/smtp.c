@@ -67,6 +67,7 @@ Cada estado va a tener un handlers que hay que definir
 
 unsigned int request_read_handler(struct selector_key* key);
 unsigned int request_write_handler(struct selector_key* key);
+static ssize_t send_msg(struct selector_key * key, const char * msg);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
 void smtp_done(selector_key* key);
@@ -222,6 +223,12 @@ request_write_handler(struct selector_key* key)
 	char msg[MAX_LINE_LEN];
 	//Procesamos!
 	handle_request(key, msg);
+	//Ahora enviamos al socket
+	ssize_t sent_bytes = send_msg(key, msg);
+	if(sent_bytes < 0){
+		return -1;
+	}
+	buffer_read_adv(output_buffer, sent_bytes);
 	
 	//Veamos si quedan cosas por leer
 	if(buffer_can_read(input_buffer)) {
@@ -229,6 +236,48 @@ request_write_handler(struct selector_key* key)
 	} else {
         selector_set_interest_key(key, OP_READ);
     }
+}
+
+static ssize_t send_msg(struct selector_key * key, const char * msg){
+
+        if (key == NULL) {
+                //TODO loggear error NULL key
+                return -1;
+        }
+
+        if (msg == NULL) {
+                //TODO loggear error NULL msg
+                return -1;
+        }
+
+		smtp_data * data = ATTACHMENT(key);
+		buffer * output_buffer = &data->write_buffer;
+		size_t msg_len = strlen(msg);
+
+		//Veamos de escribir en el buffer de salida
+		if(!buffer_can_write(output_buffer)){
+			buffer_compact(output_buffer);
+			if(!buffer_can_write(output_buffer)){
+				return -1;
+			}
+		}
+
+		size_t write_limit = 0;
+		//Pido un puntero para escribir, tambien me dice cuanto puedo escribir
+		char * w_ptr =  (char *)buffer_write_ptr(output_buffer, &write_limit);
+		strcpy(w_ptr, msg);
+		//Hago avanzar el puntero de escritura para poder usar el de lectura
+		buffer_write_adv(output_buffer, msg_len);
+
+		size_t read_limit = 0;
+		char * r_ptr =  (char *)buffer_read_ptr(output_buffer, &read_limit);
+		//Escribimos en el socket
+		ssize_t sent_bytes = send(key->fd, r_ptr, read_limit, 0);
+		if(sent_bytes < 0){
+			return -1;
+		}
+
+		return sent_bytes;
 }
 
 void
@@ -275,7 +324,7 @@ request_read_handler(struct selector_key* key)
 		buffer_write_adv(&data->read_buffer, recv_bytes);  
 		selector_set_interest_key(key, OP_WRITE);
 		return REQUEST_WRITE;
-		
+
 	} else if (recv_bytes == 0) {
 		return DONE;
 	} else return ERROR;
@@ -298,39 +347,27 @@ static void handle_request(struct selector_key * key, char msg[MAX_COMMAND_LEN])
 
 	if(strcmp(cmd, "EHLO") == 0){
 		sprintf(msg, "EHLO\r\n");
-		printf("EHLO\r\n");
 	} else if(strcmp(cmd, "HELO") == 0) {
 		sprintf(msg, "HELO\r\n");
-		printf("HELO\r\n");
 	} else if(strcmp(cmd, "MAIL") == 0) {
 		sprintf(msg, "MAIL\r\n");
-		printf("MAIL\r\n");
 	} else if(strcmp(cmd, "RCPT") == 0) {
 		sprintf(msg, "RCPT\r\n");
-		printf("RCPT\r\n");
 	} else if(strcmp(cmd, "DATA") == 0) {
 		sprintf(msg, "DATA\r\n");
-		printf("DATA\r\n");
 	} else if(strcmp(cmd, "RSET") == 0) {
 		sprintf(msg, "RSET\r\n");
-		printf("RSET\r\n");
 	} else if(strcmp(cmd, "VRFY") == 0) {
 		sprintf(msg, "VRFY\r\n");
-		printf("VRFY\r\n");
 	} else if(strcmp(cmd, "EXPN") == 0) {
 		sprintf(msg, "EXPN\r\n");
-		printf("EXPN\r\n");
 	} else if(strcmp(cmd, "HELP") == 0) {
 		sprintf(msg, "HELP\r\n");
-		printf("HELP\r\n");
 	} else if(strcmp(cmd, "NOOP") == 0) {
 		sprintf(msg, "NOOP\r\n");
-		printf("NOOP\r\n");
 	} else if(strcmp(cmd, "QUIT") == 0) {
 		sprintf(msg, "QUIT\r\n");
-		printf("QUIT\r\n");
 	} else {
 		sprintf(msg, "Invalid command\r\n");
-		printf("Invalid command\r\n");
 	}
 }
