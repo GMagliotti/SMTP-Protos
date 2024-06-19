@@ -40,8 +40,8 @@ typedef struct smtp_data
 	struct request_parser request_parser;
 	struct request request;
 
-	uint8_t mail_from[MAIL_SIZE];
-	uint8_t rcpt_to[MAIL_SIZE];
+	uint8_t mail_from[LOCAL_USER_NAME_SIZE + 1 + DOMAIN_NAME_SIZE];
+	uint8_t rcpt_to[LOCAL_USER_NAME_SIZE + 1 + DOMAIN_NAME_SIZE];
 	uint8_t data[BODY_SIZE];
 
 	// raw buffer

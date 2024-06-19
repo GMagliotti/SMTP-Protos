@@ -341,7 +341,6 @@ request_process(struct selector_key* key)
 	} else if (strcasecmp(data->request_parser.request->verb, "DATA") == 0) {
 		// cambiar el estado a REQUEST_DATA
 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			memcpy(data->rcpt_to, data->request_parser.request->arg, N(data->request_parser.request->arg));
 			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
 			memcpy(ptr, "250 2.0.0 Ok: queued as FIXME\n", 30);
 			buffer_write_adv(&data->write_buffer, 30);
@@ -478,14 +477,14 @@ request_data_init(unsigned int state, struct selector_key* key)
 	}
 
 	// now we create tmp dir within maildir
-	char full_dir[MAIL_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = { 0 };
+	char full_dir[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = { 0 };
 	snprintf(full_dir, sizeof(full_dir), "%s/tmp", maildir);
 	if (create_directory_if_not_exists(full_dir) == -1) {
 		perror("create_directory_if_not_exists");
 		return;
 	}
 
-	char filename[MAIL_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
+	char filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
 	              MS_TEXT_SIZE] = { 0 };
 	time_t ms = time(NULL);
 	// filename like mail/<domain>/<user>/tmp/<timestamp>
@@ -510,6 +509,80 @@ request_data_close(unsigned int state, struct selector_key* key)
 {
 	if (state == REQUEST_DATA) {
 		smtp_data* data = ATTACHMENT(key);
+		// we copy the mail from mail/<domain>/<user>/tmp/<timestamp> to mail/<domain>/<rcpt_to>/new/<timestamp>
+		// we need to create the new dir if it doesn't exist
+
+		char* maildir = get_and_create_maildir((char*)data->rcpt_to);
+		if (maildir == NULL) {
+			perror("get_and_create_maildir");
+			return;
+		}
+
+		// now we create new dir within maildir
+		char full_dir[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = {
+			0
+		};
+		snprintf(full_dir, sizeof(full_dir), "%s/new", maildir);
+		if (create_directory_if_not_exists(full_dir) == -1) {
+			perror("create_directory_if_not_exists");
+			return;
+		}
+
+		free(maildir);
+
+		char filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
+		              MS_TEXT_SIZE] = { 0 };
+
+		time_t ms = time(NULL);
+		snprintf(filename, sizeof(filename), "%s/%ld", full_dir, ms);
+
+		int fd = open(filename, O_CREAT | O_WRONLY, 0777);
+		if (fd < 0) {
+			perror("open");
+			return;
+		}
+
+		// we need to copy the file from the tmp dir to the new dir
+		// we need to read the file from the tmp dir
+
+		char* domain = strchr((char*)data->rcpt_to, '@') + 1;
+		char local_user[LOCAL_USER_NAME_SIZE] = { 0 };
+
+		char tmp_filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE +
+		                  1 + MS_TEXT_SIZE] = { 0 };
+		snprintf(tmp_filename, sizeof(tmp_filename), "mail/%s/%s/tmp/%ld", domain, local_user, ms);
+
+		// the fd from tmp file is in data->output_fd
+
+		// we need to read from the tmp file and write to the new file
+
+		int tmp_fd = data->output_fd;
+
+		char buffer[1024] = { 0 };
+
+		ssize_t bytes_read = 0;
+
+		// This while loop is provisional. We need to read the whole file and apply the transformation if there is any
+		// The reason for doing it as a while loop is because we haven't implemented transformations yet
+		while ((bytes_read = read(tmp_fd, buffer, sizeof(buffer))) > 0) {
+			ssize_t bytes_written = write(fd, buffer, bytes_read);
+			if (bytes_written < 0) {
+				perror("write");
+				return;
+			}
+		}
+
+		if (bytes_read < 0) {
+			perror("read");
+			return;
+		}
+
+		// we close the new file
+
+		close(fd);
+
+		// we close the tmp file
+
 		request_close(&data->request_parser);
 		close(data->output_fd);  // close the file
 	}
