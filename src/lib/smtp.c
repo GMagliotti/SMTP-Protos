@@ -490,7 +490,7 @@ request_data_init(unsigned int state, struct selector_key* key)
 	// filename like mail/<domain>/<user>/tmp/<timestamp>
 	snprintf(filename, sizeof(filename), "%s/tmp/%ld", maildir, ms);
 
-	int fd = open(filename, O_CREAT | O_WRONLY, 0777);
+	int fd = open(filename, O_CREAT | O_RDWR, 0777);
 	if (fd < 0) {
 		perror("open");
 		return;
@@ -536,8 +536,8 @@ request_data_close(unsigned int state, struct selector_key* key)
 		time_t ms = time(NULL);
 		snprintf(filename, sizeof(filename), "%s/%ld", full_dir, ms);
 
-		int fd = open(filename, O_CREAT | O_WRONLY, 0777);
-		if (fd < 0) {
+		int new_fd = open(filename, O_CREAT | O_WRONLY, 0777);
+		if (new_fd < 0) {
 			perror("open");
 			return;
 		}
@@ -561,11 +561,13 @@ request_data_close(unsigned int state, struct selector_key* key)
 		char buffer[1024] = { 0 };
 
 		ssize_t bytes_read = 0;
+		lseek(tmp_fd, 0, SEEK_SET);  // we need to go to the beginning of the file because we have already written to it
 
 		// This while loop is provisional. We need to read the whole file and apply the transformation if there is any
 		// The reason for doing it as a while loop is because we haven't implemented transformations yet
+
 		while ((bytes_read = read(tmp_fd, buffer, sizeof(buffer))) > 0) {
-			ssize_t bytes_written = write(fd, buffer, bytes_read);
+			ssize_t bytes_written = write(new_fd, buffer, bytes_read);
 			if (bytes_written < 0) {
 				perror("write");
 				return;
@@ -579,7 +581,7 @@ request_data_close(unsigned int state, struct selector_key* key)
 
 		// we close the new file
 
-		close(fd);
+		close(new_fd);
 
 		// we close the tmp file
 
