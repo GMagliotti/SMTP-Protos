@@ -49,25 +49,53 @@ struct request
 enum request_state
 {
 	request_flush = -1,
-	request_verb,
-	request_mail,
 	request_helo,
-	request_data,
-	request_data_body,
+	request_arg,
 	request_cr,
+	request_from,
+	request_mail_from,
+	request_to,
+	request_mail_to,
+	request_data,
+	request_body,
 	request_done,
-	request_error
+	request_error,
 };
 
-struct request_parser
+struct state_message {
+    const char* success;
+    const char* error;
+};
+// Arreglo de mensajes para cada estado
+// Arreglo de mensajes para cada estado
+static const struct state_message state_messages[] = {
+    [request_helo] = {"250 HELO OK\r\n", "500 HELO Error\r\n"},
+    [request_arg] = {"250 ARG OK\r\n", "500 ARG Error\r\n"},
+    [request_from] = {"250 MAIL FROM OK\r\n", "500 MAIL FROM Error\r\n"},
+    [request_to] = {"250 RCPT TO OK\r\n", "500 RCPT TO Error\r\n"},
+    [request_mail_from] = {"250 MAIL FROM Address OK\r\n", "500 MAIL FROM Address Error\r\n"},
+    [request_mail_to] = {"250 RCPT TO Address OK\r\n", "500 RCPT TO Address Error\r\n"},
+    [request_data] = {"354 Start mail input; end with <CRLF>.<CRLF>\r\n", "500 DATA Error\r\n"},
+    [request_body] = {"250 DATA Body OK\r\n", "500 DATA Body Error\r\n"},
+    [request_cr] = {"250 CR OK\r\n", "500 CR Error\r\n"},
+    [request_done] = {"221 Bye\r\n", "500 Error\r\n"}
+};
+typedef enum request_state request_state;
+
+typedef struct request_parser
 {
 	struct request* request;
-	enum request_state state;
+	request_state state;
+	request_state next_state;
+	request_state last_state;
+
 	/** cuantos bytes tenemos que leer*/
 	unsigned int n;
 	/** cuantos bytes ya leimos */
 	unsigned int i;
-};
+} request_parser;
+
+
 
 /** inicializa el parser */
 void request_parser_init(struct request_parser* p);

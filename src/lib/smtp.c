@@ -73,10 +73,12 @@ Cada estado va a tener un handlers que hay que definir
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
 #define MAIL_DIR_SIZE          4
 
+typedef enum request_state (*state_handler)(const uint8_t c, struct request_parser* p);
+
 unsigned int request_read_handler(struct selector_key* key);
 // unsigned int request_data_handler(struct selector_key* key);
 unsigned int request_write_handler(struct selector_key* key);
-unsigned int request_process(struct selector_key* key);
+unsigned int request_process(struct selector_key* key, bool error);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
 void smtp_done(selector_key* key);
@@ -86,7 +88,7 @@ void request_data_close(unsigned int state, struct selector_key* key);
 unsigned int request_data_handler(struct selector_key* key);
 void on_done_init(const unsigned state, struct selector_key* key);
 
-static const struct state_definition smtp_states[] = {
+static const struct state_definition states_handlers[] = {
 	// definir los estados de la maquina de estados del protocolo SMTP
 	// no necesariamente tenemos que llenar todos los campos en cada estado
 
@@ -195,8 +197,8 @@ smtp_passive_accept(selector_key* key)
 	data->client_addr = client_addr;
 	data->stm.initial = REQUEST_WRITE;
 	data->stm.max_state = ERROR;
-	data->stm.states = smtp_states;
-
+	data->stm.states = states_handlers;
+	data->request_parser.state = request_helo;
 	buffer_init(&data->read_buffer, N(data->raw_buff_read), data->raw_buff_read);
 	buffer_init(&data->write_buffer, N(data->raw_buff_write), data->raw_buff_write);
 
@@ -262,30 +264,48 @@ request_read_handler(struct selector_key* key)
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
 
-	int ret = REQUEST_READ;
+	smtp_states ret = REQUEST_READ;
 
 	if (recv_bytes > 0) {
 		buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
 		// procesamiento
 		bool error = false;
-		int st = request_consume(&data->read_buffer, &data->request_parser, &error);
-		if (request_is_done(st, 0)) {
-			// armado de la rta
-			if (!error) {
-				// no lei todos los bytes del buffer, pero quiero consumirlos como si hubiera terminado
-				ret = request_process(key);
-			} else {
-				buffer_reset(&data->read_buffer);
-				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-					uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-					memcpy(ptr, "502 5.5.2 Error: command not recognized\n", 41);
-					buffer_write_adv(&data->write_buffer, 41);
-					ret = REQUEST_WRITE;
-				}
-			}
-		} else if (request_is_data(st)) {
-			ret = REQUEST_DATA;
+		request_state next_state = request_consume(&data->read_buffer, &data->request_parser, &error);
+		ret = request_process(key, error);
+		if (!error) {
+			data->request_parser.state = next_state;
 		}
+		else{
+			data->request_parser.state = data->request_parser.last_state;
+		}
+		
+		buffer_reset(&data->read_buffer);
+
+		if(request_is_data(next_state)) {
+			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)){
+				ret = REQUEST_DATA;
+			}
+		}
+		// if (request_is_done(next_state, &error)) {
+		// 	// armado de la rta
+		// 	if (!error) {
+		// 		// no lei todos los bytes del buffer, pero quiero consumirlos como si hubiera terminado
+		// 		ret = request_process(key);
+		// 		data->request_parser.state = next_state;
+		// 	} else {
+		// 		// acá vamos a tener errores de verbo, de secuencialidad o de formato de argumento
+		// 		buffer_reset(&data->read_buffer);
+		// 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+		// 			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+		// 			memcpy(ptr, "502 5.5.2 Error: command not recognized\n", 41);
+		// 			buffer_write_adv(&data->write_buffer, 41);
+		// 			ret = REQUEST_WRITE;
+		// 		}
+		// 	}
+		// } else if (request_is_data(next_state)) {
+		// 	ret = REQUEST_DATA;
+		// 	data->request_parser.state = next_state;
+		// }
 
 	} else {
 		ret = ERROR;
@@ -299,64 +319,87 @@ request_read_handler(struct selector_key* key)
 
 // }
 enum smtp_states
-request_process(struct selector_key* key)
+request_process(struct selector_key* key, bool error)
 {
-	smtp_data* data = ATTACHMENT(key);
+	// Los verbos están chequeados ya, los Argumentos solo cumplen con los limitadores
 
-	int ret;
+	smtp_data* data = ATTACHMENT(key);
+	request_state current_state = data->request_parser.state;
+
 	size_t count;
 
-	if (strcasecmp(data->request_parser.request->verb, "HELO") == 0 ||
-	    strcasecmp(data->request_parser.request->verb, "EHLO") == 0) {
-		// cambiar el estado a REQUEST_READ
-		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-			// acá entraría el tema del parser
-			memcpy(ptr,
-			       "250-foo.pdc\r\n250-PIPELINING\r\n250-SIZE "
-			       "10240000\r\n250-VRFY\r\n250-ETRN\r\n250-STARTTLS\r\n250-ENHANCEDSTATUSCODES\r\n250-8BITMIME\r\n250-"
-			       "DSN\r\n250-SMTPUTF8\r\n250 CHUNKING\r\n",
-			       159);
-			buffer_write_adv(&data->write_buffer, 159);
-			ret = REQUEST_WRITE;
-		}
-	} else if (strcasecmp(data->request_parser.request->verb, "MAIL FROM") == 0) {
-		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			memcpy(data->mail_from, data->request_parser.request->arg, N(data->request_parser.request->arg));
-			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-			memcpy(ptr, "250 2.1.0 Ok\n", 14);
-			buffer_write_adv(&data->write_buffer, 14);
-			ret = REQUEST_WRITE;
-		}
-
-	} else if (strcasecmp(data->request_parser.request->verb, "RCPT TO") == 0) {
-		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			memcpy(data->rcpt_to, data->request_parser.request->arg, N(data->request_parser.request->arg));
-			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-			memcpy(ptr, "250 2.1.5 Ok\n", 14);
-			buffer_write_adv(&data->write_buffer, 14);
-			ret = REQUEST_WRITE;
-		}
-
-	} else if (strcasecmp(data->request_parser.request->verb, "DATA") == 0) {
-		// cambiar el estado a REQUEST_DATA
-		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-			memcpy(ptr, "250 2.0.0 Ok: queued as FIXME\n", 30);
-			buffer_write_adv(&data->write_buffer, 30);
-			ret = REQUEST_WRITE;
-		}
-	} else if (strcasecmp(data->request_parser.request->verb, "QUIT") == 0) {
-		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-			memcpy(ptr, "221 2.0.0 Bye\n", 14);
-			buffer_write_adv(&data->write_buffer, 14);
-			ret = DONE;
-		}
-	} else {
-		ret = ERROR;
+	if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_WRITE)) {
+		return ERROR;
 	}
-	return ret;
+
+	uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	const char* message;
+	if (error) {
+		message = state_messages[current_state].error;
+	} else {
+		message = state_messages[current_state].success;
+	}
+	size_t len = strlen(message);
+	// if (count < len) {
+	// 	buffer_compact(&data->write_buffer);
+	// }
+	memcpy(ptr, message, len);
+	buffer_write_adv(&data->write_buffer, len);
+
+	return REQUEST_WRITE;
+	/*
+	    if (strcasecmp(data->request_parser.request->verb, "HELO") == 0 ||
+	        strcasecmp(data->request_parser.request->verb, "EHLO") == 0) {
+	        // cambiar el estado a REQUEST_READ
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            // acá entraría el tema del parser
+	            memcpy(ptr,
+	                   "250-foo.pdc\r\n250-PIPELINING\r\n250-SIZE "
+	                   "10240000\r\n250-VRFY\r\n250-ETRN\r\n250-STARTTLS\r\n250-ENHANCEDSTATUSCODES\r\n250-8BITMIME\r\n250-"
+	                   "DSN\r\n250-SMTPUTF8\r\n250 CHUNKING\r\n",
+	                   159);
+	            buffer_write_adv(&data->write_buffer, 159);
+	            ret = REQUEST_WRITE;
+	        }
+	    } else if (strcasecmp(data->request_parser.request->verb, "MAIL FROM") == 0) {
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            memcpy(data->mail_from, data->request_parser.request->arg, N(data->request_parser.request->arg));
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            memcpy(ptr, "250 2.1.0 Ok\n", 14);
+	            buffer_write_adv(&data->write_buffer, 14);
+	            ret = REQUEST_WRITE;
+	        }
+
+	    } else if (strcasecmp(data->request_parser.request->verb, "RCPT TO") == 0) {
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            memcpy(data->rcpt_to, data->request_parser.request->arg, N(data->request_parser.request->arg));
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            memcpy(ptr, "250 2.1.5 Ok\n", 14);
+	            buffer_write_adv(&data->write_buffer, 14);
+	            ret = REQUEST_WRITE;
+	        }
+
+	    } else if (strcasecmp(data->request_parser.request->verb, "DATA") == 0) {
+	        // cambiar el estado a REQUEST_DATA
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            memcpy(ptr, "250 2.0.0 Ok: queued as FIXME\n", 30);
+	            buffer_write_adv(&data->write_buffer, 30);
+	            ret = REQUEST_WRITE;
+	        }
+	    } else if (strcasecmp(data->request_parser.request->verb, "QUIT") == 0) {
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            memcpy(ptr, "221 2.0.0 Bye\n", 14);
+	            buffer_write_adv(&data->write_buffer, 14);
+	            ret = DONE;
+	        }
+	    } else {
+	        ret = ERROR;
+	    }
+	    return ret;
+	    */
 }
 
 void
@@ -610,7 +653,7 @@ request_data_handler(struct selector_key* key)
 			// armado de la rta
 			if (!error) {
 				// no lei todos los bytes del buffer, pero quiero consumirlos como si hubiera terminado
-				ret = request_process(key);
+				ret = request_process(key, error);
 			} else {
 				buffer_reset(&data->read_buffer);
 				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {

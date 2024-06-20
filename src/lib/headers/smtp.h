@@ -59,6 +59,9 @@ enum smtp_states
 	ERROR,
 	// definir los estados de la maquina de estados del protocolo SMTP
 };
+typedef enum smtp_states smtp_states;
+ 
+
 
 void smtp_passive_accept(selector_key* key);
 void destroy_socket(selector_key* data);

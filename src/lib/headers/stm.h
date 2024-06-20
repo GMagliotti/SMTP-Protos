@@ -59,6 +59,7 @@ struct state_definition
 	unsigned (*on_block_ready)(struct selector_key* key);
 };
 
+
 /** inicializa el la máquina */
 void stm_init(struct state_machine* stm);
 
