@@ -7,17 +7,18 @@
 #include <string.h>
 #include <strings.h>
 
-typedef request_state (*state_handler)(const uint8_t c, request_parser* p);
+typedef enum request_state (*state_handler)(const uint8_t c, request_parser* p);
 
 // Prototipos de funciones estáticas
-static request_state handle_helo(const uint8_t c, request_parser* p);
-static request_state handle_arg(const uint8_t c, request_parser* p);
-static request_state handle_from(const uint8_t c, request_parser* p);
-static request_state handle_to(const uint8_t c, request_parser* p);
-static request_state handle_mail(const uint8_t c, request_parser* p);
-static request_state handle_body(const uint8_t c, request_parser* p);
-static request_state handle_data(const uint8_t c, request_parser* p);
-static request_state handle_cr(const uint8_t c, request_parser* p);
+static enum request_state handle_helo(const uint8_t c, request_parser* p);
+static enum request_state handle_arg(const uint8_t c, request_parser* p);
+static enum request_state handle_from(const uint8_t c, request_parser* p);
+static enum request_state handle_to(const uint8_t c, request_parser* p);
+static enum request_state handle_mail(const uint8_t c, request_parser* p);
+static enum request_state handle_body(const uint8_t c, request_parser* p);
+static enum request_state handle_data(const uint8_t c, request_parser* p);
+static enum request_state handle_cr(const uint8_t c, request_parser* p);
+enum request_state state_error(enum request_state next, struct request_parser* p);
 
 // Array de punteros a funciones para manejar estados
 static state_handler state_handlers[] = {
@@ -42,68 +43,16 @@ request_parser_data_init(request_parser* p)
 	p->i = 0;
 }
 
-extern request_state
+extern enum request_state
 request_parser_feed(request_parser* p, const uint8_t c)
 {
 	return state_handlers[p->state](c, p);
 }
 
-/*
-extern request_state
-request_parser_feed(request_parser* p, const uint8_t c)
-{
-    request_state next;
-
-    switch (p->state) {
-        case request_verb:
-            next = verb(c, p);
-            break;
-        case request_mail:
-            next = mail(c, p);
-            break;
-        case request_data:  // no se debería llegar nunca acá, pues se hace un cambio de estado de la stm del smtp.c
-            if (c == '\n') {
-                p->i = 0;
-                next = request_data_body;
-            } else {
-                next = request_error;
-            }
-            break;
-        case request_data_body:
-            next = data_body(c, p);
-
-            break;
-        case request_helo:
-            next = helo(c, p);
-            break;
-        case request_cr:
-            switch (c) {
-                case '\n':
-                    next = request_done;
-                    break;
-                default:
-                    next = request_error;
-                    break;
-            }
-            break;
-        case request_done:
-        case request_error:
-            next = p->state;
-            break;
-        default:
-            next = request_error;
-            break;
-    }
-
-    return p->state = next;
-}
-
-*/
-
-extern request_state
+extern enum request_state
 request_consume(buffer* b, request_parser* p, bool* errored)
 {
-	request_state st = p->state;
+	enum request_state st = p->state;
 	while (buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
 		st = request_parser_feed(p, c);
@@ -114,41 +63,72 @@ request_consume(buffer* b, request_parser* p, bool* errored)
 			break;
 		}
 
-		if (request_is_data(st)) {
-			return st;
-		}
+		// if (request_is_data_body(st)) {
+		// 	return st;
+		// }
 	}
 	return st;
 }
 
 extern bool
-request_is_done(const request_state st, bool* errored)
+request_is_done(const enum request_state st, bool* errored)
 {
 	if (st == request_error) {
 		*errored = true;
 	}
-	return st >= request_done;
+	return st >= request_done && st <= request_error;
 }
 
 extern bool
-request_is_data(const request_state st)
+request_is_data(const enum request_state st)
 {
 	return st == request_data;
 }
 
 extern bool
-request_is_data_body(const request_state st)
+request_is_data_body(const enum request_state st)
 {
 	return st == request_body;
 }
 
-extern bool
-request_file_flush(request_state st, request_parser* p)
+// extern bool
+// request_file_flush(enum request_state st, request_parser* p)
+// {
+// 	// es necesario flushear si estamos en data_body y si el buffer está lleno
+// 	// o bien si estamos en doneF
+// 	(void*) p;
+// 	(void*) st;
+// 	return false;
+// }
+enum request_state
+jump_to_error(enum request_state next, struct request_parser* p)
 {
-	// es necesario flushear si estamos en data_body y si el buffer está lleno
-	// o bien si estamos en doneF
+	p->last_state = next;
+	return request_error;
 }
 
+enum request_state
+jump_to_internal(enum request_state next, struct request_parser* p)
+{
+	p->state = next;
+	return next;
+}
+void
+jump_from_internal(enum request_state next,
+                   enum request_state current,
+                   enum request_state last,
+                   struct request_parser* p)
+{
+	p->last_state = last;
+	p->next_state = next;
+	p->state = current;
+}
+
+// enum request_state
+// jump(enum request_state next, struct request_parser* p)
+// {
+// 	p->last_state =
+// }
 void
 request_close(request_parser* p)
 {
@@ -166,21 +146,27 @@ handle_helo(const uint8_t c, request_parser* p)
 			p->request->verb[p->i] = '\0';
 			if (strcasecmp(p->request->verb, "HELO") == 0 || strcasecmp(p->request->verb, "EHLO") == 0) {
 				p->i = 0;
-				next = request_arg;
-				p->state = next;
+				next = jump_to_internal(request_arg, p);
+				// next = request_arg;
+				// p->state = next;
 			} else {
-				next = request_error;
+				next = jump_to_error(request_helo, p);
+				// p->last_state = request_helo;
+				// next = request_error;
 			}
 			break;
 		case '\r':
-			next = request_error;
+			// p->last_state = request_helo;
+			// next = request_error;
 			break;
 		default:
 			if (p->i < sizeof(p->request->verb) - 1) {
 				p->request->verb[p->i++] = (char)c;
 				next = request_helo;
 			} else {
-				next = request_error;
+				next = jump_to_error(request_helo, p);
+				// p->last_state = request_helo;
+				// next = request_error;
 			}
 			break;
 	}
@@ -193,9 +179,10 @@ handle_arg(const uint8_t c, request_parser* p)
 	switch (c) {
 		case '\r':
 			p->request->arg[p->i] = '\0';
-			p->next_state = request_from;
-			p->last_state = request_helo;
-			p->state = request_cr;
+			jump_from_internal(request_from, request_helo, request_cr, p);
+			// p->next_state = request_from;
+			// p->last_state = request_helo;
+			// p->state = request_cr;
 			break;
 		default:
 			if (p->i < sizeof(p->request->arg) - 1) {
@@ -218,8 +205,9 @@ handle_from(const uint8_t c, request_parser* p)
 			p->request->verb[p->i] = '\0';
 			if (strcasecmp(p->request->verb, "MAIL FROM") == 0) {
 				p->i = 0;
-				next = request_mail_from;
-				p->state = next;
+				next = jump_to_internal(request_mail_from, p);
+				// next = request_mail_from;
+				// p->state = next;
 			}
 			break;
 		case '\r':
@@ -230,7 +218,8 @@ handle_from(const uint8_t c, request_parser* p)
 				p->request->verb[p->i++] = (char)c;
 				next = request_from;
 			} else {
-				next = request_error;
+				next = jump_to_error(request_from, p);
+				// next = request_error;
 			}
 			break;
 	}
@@ -246,22 +235,27 @@ handle_to(const uint8_t c, request_parser* p)
 			p->request->verb[p->i] = '\0';
 			if (strcasecmp(p->request->verb, "RCPT TO") == 0) {
 				p->i = 0;
-				next = request_mail_to;
-				p->state = next;
+				next = jump_to_internal(request_mail_to, p);
+				// next = request_mail_to;
+				// p->state = next;
 
 			} else {
-				next = request_error;
+				next = jump_to_error(request_to, p);
+
+				// next = request_error;
 			}
 			break;
 		case '\r':
-			next = request_error;
+			next = jump_to_error(request_to, p);
+			// next = request_error;
 			break;
 		default:
 			if (p->i < sizeof(p->request->verb) - 1) {
 				p->request->verb[p->i++] = (char)c;
 				next = request_to;
 			} else {
-				next = request_error;
+				next = jump_to_error(request_to, p);
+				// next = request_error;
 			}
 			break;
 	}
@@ -275,13 +269,16 @@ handle_mail(const uint8_t c, request_parser* p)
 	switch (c) {
 		case '<':
 			if (p->i != 0) {
-				return request_error;
+				next = jump_to_error(p->state, p);
+				// next = request_error;
 			}
 			next = p->state;
 			break;
 		case '>':
 			if (p->i == 0) {
-				return request_error;
+				next = jump_to_error(p->state, p);
+
+				return next;
 			}
 			p->request->arg[p->i] = '>';
 			next = p->state;
@@ -292,14 +289,15 @@ handle_mail(const uint8_t c, request_parser* p)
 				return request_error;
 			}
 			p->request->arg[p->i] = '\0';
-
-			p->next_state = p->state + 1;
-			p->last_state = p->state;
-			p->state = request_cr;
+			jump_from_internal(p->state + 1, request_cr, p->state, p);
+			// p->next_state = p->state + 1;
+			// p->last_state = p->state;
+			// p->state = request_cr;
 
 			break;
 		case '\n':
-			next = request_error;
+			next = jump_to_error(p->state, p);
+			// next = request_error;
 			break;
 		default:
 			if (p->i < sizeof(p->request->arg) - 1) {
@@ -307,7 +305,8 @@ handle_mail(const uint8_t c, request_parser* p)
 
 				next = p->state;
 			} else {
-				next = request_error;
+				next = jump_to_error(p->state, p);
+				// next = request_error;
 			}
 			break;
 	}
@@ -317,13 +316,14 @@ static enum request_state
 handle_body(const uint8_t c, request_parser* p)
 {
 	enum request_state next;
-	switch (c) {
+ 	switch (c) {
 		case '\r':
-			if (p->i > 1 && p->request->data[p->i-1] == '.' && p->request->data[p->i - 2] == '\n') {
+			if (p->i > 1 && p->request->data[p->i - 1] == '.' && p->request->data[p->i - 2] == '\n') {
 				p->request->data[p->i - 3] = '\0';
-				p->next_state = request_done;
-				p->last_state = request_body;
-				next = request_cr;
+				jump_from_internal(request_done, request_cr, request_body, p);
+				// p->next_state = request_done;
+				// p->last_state = request_body;
+				// next = request_cr;
 			} else {
 				next = request_body;
 			}
@@ -352,9 +352,11 @@ handle_data(const uint8_t c, request_parser* p)
 				// goto
 				p->request->verb[p->i] = '\0';
 
-				p->last_state = request_data;
-				p->next_state = request_body;
-				next = request_cr;
+				jump_from_internal(request_body, request_cr, request_data, p);
+
+				// p->last_state = request_data;
+				// p->next_state = request_body;
+				// next = request_cr;
 			} else {
 				next = request_error;
 			}
@@ -388,156 +390,3 @@ handle_cr(const uint8_t c, request_parser* p)
 	}
 	return next;
 }
-
-/*
-static enum request_state mail(const uint8_t c, request_parser* p);
-static enum request_state verb(const uint8_t c, request_parser* p);
-
-static enum request_state
-helo(const uint8_t c, request_parser* p)
-{
-    enum request_state next;
-    switch (c) {
-        case '\r':
-            next = request_cr;
-            break;
-        default:
-            if (p->i < sizeof(p->request->arg) - 1) {
-                p->request->arg[p->i++] = (char)c;
-                next = request_helo;
-            } else {
-                next = request_error;
-            }
-            break;
-    }
-    return next;
-}
-
-static enum request_state
-verb(const uint8_t c, request_parser* p)
-{
-    enum request_state next;
-    switch (c) {
-        case ':':
-            if (strcasecmp(p->request->verb, "MAIL FROM") == 0 || strcasecmp(p->request->verb, "RCPT TO") == 0) {
-                p->i = 0;
-                next = request_mail;
-            } else {
-                next = request_error;
-            }
-            break;
-
-        case '\r':
-            if (strcasecmp(p->request->verb, "DATA") == 0) {
-                p->i = 0;
-                // we enter in data mode
-                // we need to write the email to an output file.
-
-                next = request_data;
-            } else if (strcasecmp(p->request->verb, "QUIT") == 0) {
-                next = request_done;
-            } else {
-                next = request_error;
-            }
-            break;
-
-        case ' ':
-            p->request->verb[p->i] = '\0';
-            if (strcasecmp(p->request->verb, "EHLO") == 0 || strcasecmp(p->request->verb, "HELO") == 0) {
-                p->i = 0;
-                next = request_helo;
-                break;
-            }
-            // fall through
-        default:
-            if (p->i < sizeof(p->request->verb) - 1) {
-                p->request->verb[p->i++] = (char)c;
-                next = request_verb;
-            } else {
-                next = request_error;
-            }
-            break;
-    }
-    return next;
-}
-static enum request_state
-mail(const uint8_t c, request_parser* p)
-{
-    enum request_state next;
-    // should be <mail>
-
-    switch (c) {
-        case '<':
-            if (p->i == 0) {
-                next = request_mail;
-            } else {
-                next = request_error;
-            }
-            break;
-        case '>':
-            if (p->i > 0) {
-                next = request_mail;
-                p->request->arg[p->i] = '\0';
-            } else {
-                next = request_error;
-            }
-            break;
-        case '\r':
-            next = request_cr;
-            break;
-        case '\n':
-            next = request_error;
-            break;
-        default:
-            if (p->i < sizeof(p->request->arg) - 1) {
-                p->request->arg[p->i++] = (char)c;
-
-                next = request_mail;
-            } else {
-                next = request_error;
-            }
-            break;
-    }
-    return next;
-}
-static enum request_state
-data_body(const uint8_t c, request_parser* p)
-{
-    enum request_state next;
-
-    if (c == '\r') {
-        if (p->i > 1 && p->request->data[p->i - 1] == '.' && p->request->data[p->i - 2] == '\n') {
-            p->request->data[p->i - 2] = '\0';
-            next = request_done;
-        } else {
-            next = request_data_body;
-        }
-    } else {
-        if (p->i < sizeof(p->request->data) - 1) {
-            p->request->data[p->i++] = (char)c;
-            next = request_data_body;
-        } else {
-            next = request_flush;
-        }
-    }
-    return next;
-}
-
-
-
-*/
-/*
-extern enum request_state
-request_data_consume(buffer* b, request_parser* p, bool* errored)
-{
-    enum request_state st = p->state;
-    while (buffer_can_read(b)) {
-        const uint8_t c = buffer_read(b);
-        st = request_parser_feed(p, c);
-        if (request_is_done(st, errored) || st == request_flush) {
-            break;
-        }
-    }
-    return st;
-}
-*/
