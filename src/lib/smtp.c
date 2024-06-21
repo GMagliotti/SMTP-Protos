@@ -209,6 +209,7 @@ request_write_handler(struct selector_key* key)
 	ptr = buffer_read_ptr(buff, &count);
 
 	send_bytes = send(key->fd, ptr, count, MSG_NOSIGNAL);
+	monitor_add_sent_bytes(send_bytes);
 
 	int ret;
 	if (send_bytes >= 0) {

@@ -16,3 +16,8 @@ void monitor_close_connection(void)
 {
         collected_data.curr_connections -= 1;
 }
+
+void monitor_add_sent_bytes(unsigned long bytes)
+{
+        collected_data.sent_bytes += bytes;
+}

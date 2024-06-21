@@ -11,3 +11,4 @@ typedef struct monitor_collection_data_t {
 
 void monitor_add_connection(void);
 void monitor_close_connection(void);
+void monitor_add_sent_bytes(unsigned long bytes);
