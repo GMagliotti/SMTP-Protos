@@ -63,6 +63,7 @@ Cada estado va a tener un handlers que hay que definir
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <monitor.h>
 
 unsigned int request_read_handler(struct selector_key* key);
 unsigned int request_write_handler(struct selector_key* key);
@@ -125,6 +126,7 @@ close_handler(struct selector_key* key)
 {
 	stm_handler_close(&ATTACHMENT(key)->stm, key);
 	smtp_done(key);
+	monitor_close_connection();
 }
 
 static fd_handler smtp_handler = {
@@ -189,6 +191,9 @@ smtp_passive_accept(selector_key* key)
 		smtp_done(key);
 		return;
 	}
+
+	monitor_add_connection();
+	return;
 }
 
 // REQUEST WRITE HANDLERS
