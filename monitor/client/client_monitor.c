@@ -14,61 +14,86 @@
 */
 
 void
-printBytesRecieved(uint8_t* buffer, ssize_t numBytes)
+print_bytes_recieved(uint8_t* buffer, int command)
 {
-	printf("Received: ");
-	for (int i = 0; i < numBytes; i++) {
-		printf("buff[%d]=%02x ", i, buffer[i]);
+	uint16_t qty;
+	uint64_t bytes;
+	switch (command) {
+		case HIST_C:
+			qty = (buffer[6] << 8) | buffer[7];
+			qty = ntohs(qty);
+			printf("Historical connections: %d\n", qty);
+			return;
+		case CONC_C:
+			qty = (buffer[6] << 8) | buffer[7];
+			qty = ntohs(qty);
+			printf("Simultaneous connections: %d\n", qty);
+			return;
+		case BYTES_T:
+			bytes = ((uint64_t)buffer[6] << 56) | ((uint64_t)buffer[7] << 48) | ((uint64_t)buffer[8] << 40) |
+			        ((uint64_t)buffer[9] << 32) | ((uint64_t)buffer[10] << 24) | ((uint64_t)buffer[11] << 16) |
+			        ((uint64_t)buffer[12] << 8) | (uint64_t)buffer[13];
+			printf("Transfered bytes: %lu\n", bytes);
+			return;
+		case TRANS_S:
+			// it is a boolean, 0x00 is off, 0x01 is on
+			if (buffer[6] == 0x00)
+				printf("Transformations are off\n");
+			else
+				printf("Transformations are on\n");
+			return;
+		case TRANS_ON:
+			printf("Transformations turned on\n");
+			return;
+		case TRANS_OFF:
+			printf("Transformations turned off\n");
+			return;
+		default:
+			return;
 	}
-	printf("\n");
-	// now print them like in an array and bing hex values: { 0x00, 0x00, 0x00, }
-	printf("Received: { ");
-	for (int i = 0; i < numBytes; i++) {
-		printf("0x%02x, ", buffer[i]);
-	}
-	printf("}\n");
 }
 
 int
-sockAddrsEqual(const struct sockaddr* addr1, const struct sockaddr* addr2)
+sock_addrs_equal(const struct sockaddr* addr1, const struct sockaddr* addr2)
 {
 	if (addr1 == NULL || addr2 == NULL)
 		return addr1 == addr2;
 	else if (addr1->sa_family != addr2->sa_family)
 		return 0;
 	else if (addr1->sa_family == AF_INET) {
-		struct sockaddr_in* ipv4Addr1 = (struct sockaddr_in*)addr1;
-		struct sockaddr_in* ipv4Addr2 = (struct sockaddr_in*)addr2;
-		return ipv4Addr1->sin_addr.s_addr == ipv4Addr2->sin_addr.s_addr && ipv4Addr1->sin_port == ipv4Addr2->sin_port;
+		struct sockaddr_in* ipv4_addr1 = (struct sockaddr_in*)addr1;
+		struct sockaddr_in* ipv4_addr2 = (struct sockaddr_in*)addr2;
+		return ipv4_addr1->sin_addr.s_addr == ipv4_addr2->sin_addr.s_addr &&
+		       ipv4_addr1->sin_port == ipv4_addr2->sin_port;
 	} else if (addr1->sa_family == AF_INET6) {
-		struct sockaddr_in6* ipv6Addr1 = (struct sockaddr_in6*)addr1;
-		struct sockaddr_in6* ipv6Addr2 = (struct sockaddr_in6*)addr2;
-		return memcmp(&ipv6Addr1->sin6_addr, &ipv6Addr2->sin6_addr, sizeof(struct in6_addr)) == 0 &&
-		       ipv6Addr1->sin6_port == ipv6Addr2->sin6_port;
+		struct sockaddr_in6* ipv6_addr1 = (struct sockaddr_in6*)addr1;
+		struct sockaddr_in6* ipv6_addr2 = (struct sockaddr_in6*)addr2;
+		return memcmp(&ipv6_addr1->sin6_addr, &ipv6_addr2->sin6_addr, sizeof(struct in6_addr)) == 0 &&
+		       ipv6_addr1->sin6_port == ipv6_addr2->sin6_port;
 	} else
 		return 0;
 }
 
 int
-udpClientSocket(const char* host, const char* service, struct addrinfo** servAddr)
+udp_client_socket(const char* host, const char* service, struct addrinfo** serv_addr)
 {
 	// Pedimos solamente para UDP, pero puede ser IPv4 o IPv6
-	struct addrinfo addrCriteria;
-	memset(&addrCriteria, 0, sizeof(addrCriteria));
-	addrCriteria.ai_family = AF_UNSPEC;      // Any address family
-	addrCriteria.ai_socktype = SOCK_DGRAM;   // Only datagram sockets
-	addrCriteria.ai_protocol = IPPROTO_UDP;  // Only UDP protocol
+	struct addrinfo addr_criteria;
+	memset(&addr_criteria, 0, sizeof(addr_criteria));
+	addr_criteria.ai_family = AF_UNSPEC;      // Any address family
+	addr_criteria.ai_socktype = SOCK_DGRAM;   // Only datagram sockets
+	addr_criteria.ai_protocol = IPPROTO_UDP;  // Only UDP protocol
 
 	// Tomamos la primera de la lista
-	int rtnVal = getaddrinfo(host, service, &addrCriteria, servAddr);
-	if (rtnVal != 0) {
+	int rtn = getaddrinfo(host, service, &addr_criteria, serv_addr);
+	if (rtn != 0) {
 		perror("getaddrinfo() failed");
 		return -1;
 	}
 
 	// Socket cliente UDP
 	return socket(
-	    (*servAddr)->ai_family, (*servAddr)->ai_socktype, (*servAddr)->ai_protocol);  // Socket descriptor for client
+	    (*serv_addr)->ai_family, (*serv_addr)->ai_socktype, (*serv_addr)->ai_protocol);  // Socket descriptor for client
 }
 
 /*
@@ -83,7 +108,7 @@ struct protocol_request {
 */
 
 void
-prepareBuffer(uint8_t* buffer, uint16_t request_id, uint8_t cmd)
+prepare_buffer(uint8_t* buffer, uint16_t request_id, uint8_t cmd)
 {
 	// we want to convert the values to Network Byte Order using netdb.h
 
@@ -118,11 +143,11 @@ enum commands
 static const char* commands_str[] = { "HIST", "CONC", "BYTES", "STATUS", "T_ON", "T_OFF" };
  */
 int
-commandExists(char* command, int* commandReference)
+command_exists(char* command, int* command_reference)
 {
 	for (int i = 0; i < 6; i++) {
 		if (strcmp(command, commands_str[i]) == 0) {
-			*commandReference = i;
+			*command_reference = i;
 			return 1;
 		}
 	}
@@ -130,7 +155,7 @@ commandExists(char* command, int* commandReference)
 }
 
 int
-argsQuantityOk(int command, int argc)
+args_quantity_ok(int command, int argc)
 {
 	if (command < 0 || argc <= 1)
 		return 0;
@@ -186,42 +211,42 @@ main(int argc, char* argv[])
 		port = DEFAULT_PORT;
 
 	char* command = argv[3];
-	int commandReference;
+	int command_reference;
 
-	if (!commandExists(command, &commandReference)) {
+	if (!command_exists(command, &command_reference)) {
 		printf("%s: is not a valid command\n", command);
 		return -1;
 	}
 
-	if (!argsQuantityOk(commandReference, argc)) {
+	if (!args_quantity_ok(command_reference, argc)) {
 		printf("%s: few arguments\n", command);
 		return -1;
 	}
 
-	struct addrinfo* servAddr;
+	struct addrinfo* serv_addr;
 
 	uint8_t buffer[REQUEST_SIZE] = { 0 };
-	prepareBuffer(buffer, request_id_generator(), commandReference);
+	prepare_buffer(buffer, request_id_generator(), command_reference);
 
-	int sock = udpClientSocket(host, port, &servAddr);
+	int sock = udp_client_socket(host, port, &serv_addr);
 
-	printf("Sending command %s to %s:%s\n", commands_str[commandReference], host, port);
-	ssize_t numBytes = sendto(sock, buffer, REQUEST_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+	printf("Sending command %s to %s:%s\n", commands_str[command_reference], host, port);
+	ssize_t num_bytes = sendto(sock, buffer, REQUEST_SIZE, 0, serv_addr->ai_addr, serv_addr->ai_addrlen);
 
-	if (numBytes < 0) {
+	if (num_bytes < 0) {
 		perror("sendto() failed");
 		return -1;
 	}
 
-	if (numBytes < 0) {
+	if (num_bytes < 0) {
 		perror("sendto() failed");
-	} else if (numBytes != REQUEST_SIZE) {
+	} else if (num_bytes != REQUEST_SIZE) {
 		perror("sendto() error, sent unexpected number of bytes");
 	}
 
 	// Guardamos la direccion/puerto de respuesta para verificar que coincida con el servidor
-	struct sockaddr_storage fromAddr;  // Source address of server
-	socklen_t fromAddrLen = sizeof(fromAddr);
+	struct sockaddr_storage from_addr;  // Source address of server
+	socklen_t from_addr_len = sizeof(from_addr);
 	uint8_t rec_buffer[REQUEST_SIZE + 1];
 
 	// Establecemos un timeout de 5 segundos para la respuesta
@@ -232,22 +257,22 @@ main(int argc, char* argv[])
 		perror("Error setting timeout");
 	}
 
-	numBytes = recvfrom(sock, rec_buffer, REQUEST_SIZE, 0, (struct sockaddr*)&fromAddr, &fromAddrLen);
-	if (numBytes < 0) {
+	num_bytes = recvfrom(sock, rec_buffer, REQUEST_SIZE, 0, (struct sockaddr*)&from_addr, &from_addr_len);
+	if (num_bytes < 0) {
 		perror("recvfrom() failed");
 	} else {
-		if (numBytes != REQUEST_SIZE)
+		if (num_bytes != REQUEST_SIZE)
 			perror("recvfrom() error, received unexpected number of bytes");
 
 		// "Autenticamos" la respuesta
-		if (!sockAddrsEqual(servAddr->ai_addr, (struct sockaddr*)&fromAddr))
+		if (!sock_addrs_equal(serv_addr->ai_addr, (struct sockaddr*)&from_addr))
 			perror("recvfrom() error, received a packet from an unknown source");
 
-		rec_buffer[numBytes] = '\0';
-		printBytesRecieved(rec_buffer, numBytes);
+		rec_buffer[num_bytes] = '\0';
+		print_bytes_recieved(rec_buffer, command_reference);
 	}
 
-	freeaddrinfo(servAddr);
+	freeaddrinfo(serv_addr);
 	close(sock);
 
 	return 0;

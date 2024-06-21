@@ -156,18 +156,24 @@ void
 process_valid_command(uint8_t command, uint8_t* response, uint8_t* status)
 {
 	*status = S_SUCCESS;
+	uint16_t val;
 	switch (command) {
 		case 0x00:
+			val = 10503;
+			val = htons(val);
+			response[6] = (val >> 8) & 0xff;
+			response[7] = val & 0xff;
+			break;
 		case 0x01:
 		case 0x02:
-			response[6] = 0xff;  // hardcoded
-			response[7] = 0xff;
-			response[8] = 0xff;
-			response[9] = 0xff;
-			response[10] = 0xff;
-			response[11] = 0xff;
-			response[12] = 0xff;
-			response[13] = 0xff;
+			response[6] = 0x29;  // hardcoded
+			response[7] = 0x07;
+			response[8] = 0x00;
+			response[9] = 0x00;
+			response[10] = 0x00;
+			response[11] = 0x00;
+			response[12] = 0x00;
+			response[13] = 0x00;
 			break;
 		case 0x03:
 			response[6] = 0x03;
