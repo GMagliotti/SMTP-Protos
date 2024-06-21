@@ -152,22 +152,35 @@ send_response(int sockfd, const void* buf, size_t len, int flags, const struct s
 	return sent_bytes;
 }
 
-uint8_t
-mock_qty_u8()
+void
+process_valid_command(uint8_t command, uint8_t* response, uint8_t* status)
 {
-	return 0x10;
-}
-
-uint16_t
-mock_qty_u16()
-{
-	return 0x1020;
-}
-
-uint64_t
-mock_qty_u64()
-{
-	return 0x1020304050607080;
+	*status = S_SUCCESS;
+	switch (command) {
+		case 0x00:
+		case 0x01:
+		case 0x02:
+			response[6] = 0xff;  // hardcoded
+			response[7] = 0xff;
+			response[8] = 0xff;
+			response[9] = 0xff;
+			response[10] = 0xff;
+			response[11] = 0xff;
+			response[12] = 0xff;
+			response[13] = 0xff;
+			break;
+		case 0x03:
+			response[6] = 0x03;
+			break;
+		case 0x04:
+			response[6] = 0x04;
+			break;
+		case 0x05:
+			response[6] = 0x05;
+			break;
+		default:
+			break;
+	}
 }
 
 int
@@ -191,11 +204,23 @@ parse_monitor_message(const uint8_t* buffer,
 	}
 
 	uint16_t signature = buffer[0] << 8 | buffer[1];
+	signature = ntohs(signature);
+
 	uint8_t version = buffer[2];
+
 	uint16_t request_id = buffer[3] << 8 | buffer[4];
-	uint64_t token = ((uint64_t)buffer[5] << 56) | ((uint64_t)buffer[6] << 48) | ((uint64_t)buffer[7] << 40) |
-	                 ((uint64_t)buffer[8] << 32) | ((uint64_t)buffer[9] << 24) | ((uint64_t)buffer[10] << 16) |
-	                 ((uint64_t)buffer[11] << 8) | buffer[12];
+	uint16_t request_id_from_net = ntohs(request_id);
+
+	uint8_t token_arr[8];
+	for (int i = 0; i < 8; i++) {
+		token_arr[i] = buffer[5 + i];
+	}
+
+	uint64_t token = 0;
+	for (int i = 0; i < 8; i++) {
+		token = token << 8 | token_arr[i];
+	}
+
 	uint8_t command = buffer[13];
 
 	if (signature != SIGNATURE) {
@@ -219,16 +244,14 @@ parse_monitor_message(const uint8_t* buffer,
 	}
 	*status = S_SUCCESS;
 
-	*data_command = command;
-	*data_request_id = request_id;
-
 	// we have a valid message
 
 	// we write into the response buffer the response message
 
 	// 2 bytes for the signature
-	response[0] = (SIGNATURE >> 8) & 0xff;
-	response[1] = SIGNATURE & 0xff;
+	signature = htons((uint16_t)SIGNATURE);
+	response[0] = (signature >> 8) & 0xff;
+	response[1] = signature & 0xff;
 
 	// 1 byte for the version
 	response[2] = VERSION;
@@ -240,34 +263,8 @@ parse_monitor_message(const uint8_t* buffer,
 	// 1 byte for the status
 	response[5] = S_SUCCESS;
 
-	// now, based in the command type we write the response message
-	// THIS IS HARDCODED FOR NOW
-	switch (command) {
-		case 0x00:
-		case 0x01:
-		case 0x02:
-			uint64_t res = mock_qty_u64();
-			response[6] = (res >> 56) & 0xff;
-			response[7] = (res >> 48) & 0xff;
-			response[8] = (res >> 40) & 0xff;
-			response[9] = (res >> 32) & 0xff;
-			response[10] = (res >> 24) & 0xff;
-			response[11] = (res >> 16) & 0xff;
-			response[12] = (res >> 8) & 0xff;
-			response[13] = res & 0xff;
-			break;
-		case 0x03:
-			response[6] = 0x03;
-			break;
-		case 0x04:
-			response[6] = 0x04;
-			break;
-		case 0x05:
-			response[6] = 0x05;
-			break;
-		default:
-			break;
-	}
+	*data_command = command;
+	*data_request_id = request_id_from_net;
 
 	return 1;
 }
@@ -302,7 +299,10 @@ handle_udp_packet(struct selector_key* key)
 
 	if (parse_monitor_message(
 	        data->raw_buff_read, bytes_read, &data->command, &data->request_id, data->raw_buff_write, &status) > 0) {
-		// we send the response
+		// valid command, we send the response
+
+		// should we do this in a separate thread?
+		process_valid_command(data->command, data->raw_buff_write, &status);
 
 		send_response(
 		    key->fd, data->raw_buff_write, BUFFER_SIZE, 0, (struct sockaddr*)&data->client_addr, data->client_addr_len);
