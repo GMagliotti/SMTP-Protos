@@ -1,8 +1,7 @@
 #ifndef MONITOR_H
 #define MONITOR_H
 
-#include "buffer.h"
-#include "stm.h"
+#include "selector.h"
 
 #include <netdb.h>
 #include <stdbool.h>
@@ -67,12 +66,6 @@ typedef struct monitor_data
 	int client_fd;  // socket file descriptor
 	struct sockaddr_storage client_addr;
 	socklen_t client_addr_len;
-
-	struct state_machine stm;
-
-	// buffers
-	struct buffer read_buffer;
-	struct buffer write_buffer;
 
 	// raw buffer
 	uint8_t raw_buff_write[BUFFER_SIZE];

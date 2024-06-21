@@ -1,7 +1,7 @@
 #flags
 CFLAGS:= -std=c11 -pedantic -pedantic-errors -g -Wall  -Wextra -D_POSIX_C_SOURCE=200112L -Werror -fsanitize=address 
 SMTPD_CLI:= monitor.elf
-LIB_OBJS:= build/stm.o build/selector.o build/buffer.o build/monitor.o
+LIB_OBJS:= build/selector.o build/monitor.o
 MAIN_OBJ:= build/main.o
 
 all: $(SMTPD_CLI)

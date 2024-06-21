@@ -33,91 +33,6 @@ enum status
 	S_SIGNATURE_ERR
 };
 
-void monitor_done(selector_key* key);
-
-unsigned int m_req_read_handler(struct selector_key* key);
-unsigned int m_req_write_handler(struct selector_key* key);
-static void read_handler(struct selector_key* key);
-static void write_handler(struct selector_key* key);
-static void close_handler(struct selector_key* key);
-
-static const struct state_definition monitor_states[] = {
-	{
-	    .state = M_REQ_READ,
-	    .on_arrival = NULL,
-	    .on_departure = NULL,
-	    .on_read_ready = m_req_read_handler,
-	},
-	{
-	    .state = M_REQ_WRITE,
-	    .on_arrival = NULL,
-	    .on_departure = NULL,
-	    .on_write_ready = m_req_write_handler,
-	},
-	{
-	    .state = ERROR,
-	    .on_arrival = NULL,
-	},
-	{
-	    .state = DONE,
-	},
-};
-
-unsigned int
-m_req_read_handler(struct selector_key* key)
-{
-	while (1)
-		;
-	monitor_data* data = ATTACHMENT(key);
-	ssize_t n = recv(key->fd, data->raw_buff_read, BUFFER_SIZE, 0);
-	if (n > 0) {
-		buffer_write(&data->read_buffer, n);
-		return M_REQ_WRITE;
-	} else {
-		return ERROR;
-	}
-}
-
-unsigned int
-m_req_write_handler(struct selector_key* key)
-{
-	monitor_data* data = ATTACHMENT(key);
-	data = data;
-	while (1)
-		;
-}
-
-static void
-read_handler(struct selector_key* key)
-{
-	monitor_data* data = ATTACHMENT(key);
-	const enum monitor_states st = stm_handler_read(&data->stm, key);
-	if (ERROR == st || DONE == st) {
-		monitor_done(key);
-	}
-}
-static void
-write_handler(struct selector_key* key)
-{
-	monitor_data* data = ATTACHMENT(key);
-	const enum monitor_states st = stm_handler_write(&data->stm, key);
-	if (ERROR == st || DONE == st) {
-		monitor_done(key);
-	}
-}
-static void
-close_handler(struct selector_key* key)
-{
-	stm_handler_close(&ATTACHMENT(key)->stm, key);
-	monitor_done(key);
-}
-
-static fd_handler monitor_handler = {
-	.handle_read = read_handler,
-	.handle_write = write_handler,
-	.handle_close = close_handler,
-};
-
 void
 monitor_done(selector_key* key)
 {
@@ -252,7 +167,7 @@ parse_monitor_message(const uint8_t* buffer,
 
 	// we have a valid message
 
-	// we write into the response buffer the response message
+	// we write into the response buffer (we are not managing the command here)
 
 	// 2 bytes for the signature
 	signature = htons((uint16_t)SIGNATURE);
@@ -282,15 +197,8 @@ handle_udp_packet(struct selector_key* key)
 	if (data == NULL) {
 		return;
 	}
-	monitor_handler = monitor_handler;
 
 	data->client_addr_len = sizeof(data->client_addr);
-	data->stm.initial = M_REQ_WRITE;
-	data->stm.max_state = ERROR;
-	data->stm.states = monitor_states;
-
-	buffer_init(&data->write_buffer, BUFFER_SIZE, data->raw_buff_write);
-	buffer_init(&data->read_buffer, BUFFER_SIZE, data->raw_buff_read);
 
 	int bytes_read = recvfrom(
 	    key->fd, data->raw_buff_read, BUFFER_SIZE, 0, (struct sockaddr*)&data->client_addr, &data->client_addr_len);
@@ -314,9 +222,15 @@ handle_udp_packet(struct selector_key* key)
 		    key->fd, data->raw_buff_write, BUFFER_SIZE, 0, (struct sockaddr*)&data->client_addr, data->client_addr_len);
 
 	} else {
-		if (status < S_SIGNATURE_ERR) {
+		if (status < S_SIGNATURE_ERR) {  // if status = S_SIGNATURE_ERR, we don't send a response
 			// we send the error response
 			data->raw_buff_write[5] = status;
+			send_response(key->fd,
+			              data->raw_buff_write,
+			              BUFFER_SIZE,
+			              0,
+			              (struct sockaddr*)&data->client_addr,
+			              data->client_addr_len);
 		}
 	}
 
