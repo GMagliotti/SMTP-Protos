@@ -86,10 +86,9 @@ typedef struct monitor_data
 	uint8_t command;
 
 	// response
-	uint8_t status;   // 1 byte
-	uint64_t qty;     // 8 unsigned big-endian bytes
-	uint8_t bool_res  // 1 byte
-
+	uint8_t status;    // 1 byte
+	uint64_t qty;      // 8 unsigned big-endian bytes
+	uint8_t bool_res;  // 1 byte
 } monitor_data;
 
 void handle_udp_packet(struct selector_key* key);

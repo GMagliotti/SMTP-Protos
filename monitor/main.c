@@ -89,7 +89,7 @@ main(const int argc, const char** argv)
 	int option_len = sizeof(struct linger);
 	struct linger linger;
 
-	int rc = getsockopt(server4, SOL_SOCKET, SO_LINGER, (void*)&linger, &option_len);
+	int rc = getsockopt(server4, SOL_SOCKET, SO_LINGER, (void*)&linger, (socklen_t* restrict)&option_len);
 
 	if (rc < 0) {
 		perror("getsockopt");
@@ -107,7 +107,7 @@ main(const int argc, const char** argv)
 	}
 
 	// same for IPv6
-	rc = getsockopt(server6, SOL_SOCKET, SO_LINGER, (void*)&linger, &option_len);
+	rc = getsockopt(server6, SOL_SOCKET, SO_LINGER, (void*)&linger, (socklen_t* restrict)&option_len);
 
 	if (rc < 0) {
 		perror("getsockopt");

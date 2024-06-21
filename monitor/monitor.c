@@ -2,9 +2,10 @@
 
 #include "selector.h"
 
+#include <arpa/inet.h>
 #include <stdlib.h>
 #include <sys/socket.h>
-#include <unistd.h>
+#include <unistd.h>  // this library is for the Network Order functions
 
 // the monitor protocol is a simple protocol that allows the client to send a message to the server
 #define SIGNATURE 0xfffe
@@ -151,6 +152,24 @@ send_response(int sockfd, const void* buf, size_t len, int flags, const struct s
 	return sent_bytes;
 }
 
+uint8_t
+mock_qty_u8()
+{
+	return 0x10;
+}
+
+uint16_t
+mock_qty_u16()
+{
+	return 0x1020;
+}
+
+uint64_t
+mock_qty_u64()
+{
+	return 0x1020304050607080;
+}
+
 int
 parse_monitor_message(const uint8_t* buffer,
                       size_t n,
@@ -174,8 +193,9 @@ parse_monitor_message(const uint8_t* buffer,
 	uint16_t signature = buffer[0] << 8 | buffer[1];
 	uint8_t version = buffer[2];
 	uint16_t request_id = buffer[3] << 8 | buffer[4];
-	uint64_t token = buffer[5] << 56 | buffer[6] << 48 | buffer[7] << 40 | buffer[8] << 32 | buffer[9] << 24 |
-	                 buffer[10] << 16 | buffer[11] << 8 | buffer[12];
+	uint64_t token = ((uint64_t)buffer[5] << 56) | ((uint64_t)buffer[6] << 48) | ((uint64_t)buffer[7] << 40) |
+	                 ((uint64_t)buffer[8] << 32) | ((uint64_t)buffer[9] << 24) | ((uint64_t)buffer[10] << 16) |
+	                 ((uint64_t)buffer[11] << 8) | buffer[12];
 	uint8_t command = buffer[13];
 
 	if (signature != SIGNATURE) {
@@ -224,28 +244,26 @@ parse_monitor_message(const uint8_t* buffer,
 	// THIS IS HARDCODED FOR NOW
 	switch (command) {
 		case 0x00:
-			response[6] = 0x00;
-			response[7] = 0x01;
-			break;
 		case 0x01:
-			response[6] = 0x01;
-			response[7] = 0x02;
-			break;
 		case 0x02:
-			response[6] = 0x02;
-			response[7] = 0x03;
+			uint64_t res = mock_qty_u64();
+			response[6] = (res >> 56) & 0xff;
+			response[7] = (res >> 48) & 0xff;
+			response[8] = (res >> 40) & 0xff;
+			response[9] = (res >> 32) & 0xff;
+			response[10] = (res >> 24) & 0xff;
+			response[11] = (res >> 16) & 0xff;
+			response[12] = (res >> 8) & 0xff;
+			response[13] = res & 0xff;
 			break;
 		case 0x03:
 			response[6] = 0x03;
-			response[7] = 0x04;
 			break;
 		case 0x04:
 			response[6] = 0x04;
-			response[7] = 0x05;
 			break;
 		case 0x05:
 			response[6] = 0x05;
-			response[7] = 0x06;
 			break;
 		default:
 			break;
@@ -261,6 +279,7 @@ handle_udp_packet(struct selector_key* key)
 	if (data == NULL) {
 		return;
 	}
+	monitor_handler = monitor_handler;
 
 	data->client_addr_len = sizeof(data->client_addr);
 	data->stm.initial = M_REQ_WRITE;
@@ -282,7 +301,7 @@ handle_udp_packet(struct selector_key* key)
 	uint8_t status = S_SIGNATURE_ERR;
 
 	if (parse_monitor_message(
-	        data->raw_buff_read, bytes_read, &data->command, &data->request_id, &data->raw_buff_write, &status) > 0) {
+	        data->raw_buff_read, bytes_read, &data->command, &data->request_id, data->raw_buff_write, &status) > 0) {
 		// we send the response
 
 		send_response(
