@@ -105,6 +105,37 @@ prepareBuffer(uint8_t* buffer, uint16_t request_id, uint8_t cmd)
 	buffer[12] = TOKEN & 0xff;
 	buffer[13] = cmd;
 }
+/*
+enum commands
+{
+    HIST_C = 0x00,
+    CONC_C,
+    BYTES_T,
+    TRANS_S,
+    TRANS_ON,
+    TRANS_OFF
+};
+static const char* commands_str[] = { "HIST", "CONC", "BYTES", "STATUS", "T_ON", "T_OFF" };
+ */
+int
+commandExists(char* command, int* commandReference)
+{
+	for (int i = 0; i < 6; i++) {
+		if (strcmp(command, commands_str[i]) == 0) {
+			*commandReference = i;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int
+argsQuantityOk(int command, int argc)
+{
+	if (command < 0 || argc <= 1)
+		return 0;
+	return 1;
+}
 
 uint16_t
 request_id_generator(void)
@@ -114,19 +145,67 @@ request_id_generator(void)
 }
 
 int
-main(void)
+main(int argc, char* argv[])
 {
-	char* port = "2525";
+	// we need to implement a client application for the monitor protocol
+	/*
+	    Client works like this:
+	    1. Validate the command line arguments
+	    2. Prepare the buffer
+	    3. Send the buffer
+	    4. Wait for the response
+	    5. Validate the response
+	    6. If the response never arrives, the client should timeout
+	    7. If the response is invalid, the client should print an error message
+	    8. If the response is valid, the client should print the response data
+	*/
+
+	if (argc <= 3 || strcmp("-h", argv[3]) == 0) {
+		fprintf(stderr,
+		        "Usage: %s [HOST] [PORT] [OPTION]\n"
+		        "\n use '-' to specify default values for [HOST] and [PORT]\n"
+		        "\n"
+		        "   -h                                        Prints help and finishes.\n"
+		        "   HIST                                      Request historical conections.\n"
+		        "   CONC                                      Request simultaneous conections.\n"
+		        "   BYTES                                     Request ammount of transfered bytes.\n"
+		        "   STATUS     	                              Request information about transformations.\n"
+		        "   T_ON                                      Request to turn on transformations.\n"
+		        "   T_OFF                                     Request to turn off transformations.\n"
+		        "\n",
+		        argv[0]);
+		return 0;
+	}
+
+	const char* host = argv[1];
+	const char* port = argv[2];
+
+	if (host[0] == '-')
+		host = DEFAULT_HOST;
+	if (port[0] == '-')
+		port = DEFAULT_PORT;
+
+	char* command = argv[3];
+	int commandReference;
+
+	if (!commandExists(command, &commandReference)) {
+		printf("%s: is not a valid command\n", command);
+		return -1;
+	}
+
+	if (!argsQuantityOk(commandReference, argc)) {
+		printf("%s: few arguments\n", command);
+		return -1;
+	}
+
 	struct addrinfo* servAddr;
 
-	char* server = "127.0.0.1";
-
-	printf("Case 1: command 1\n");
 	uint8_t buffer[REQUEST_SIZE] = { 0 };
-	prepareBuffer(buffer, request_id_generator(), CMD1);
+	prepareBuffer(buffer, request_id_generator(), commandReference);
 
-	int sock = udpClientSocket(server, port, &servAddr);
+	int sock = udpClientSocket(host, port, &servAddr);
 
+	printf("Sending command %s to %s:%s\n", commands_str[commandReference], host, port);
 	ssize_t numBytes = sendto(sock, buffer, REQUEST_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
 
 	if (numBytes < 0) {
