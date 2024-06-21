@@ -58,3 +58,6 @@ dkms.conf
 
 # Exclude .vscode
 .vscode/*
+
+# Mails
+src/mail/*

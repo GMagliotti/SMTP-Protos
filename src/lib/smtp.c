@@ -56,22 +56,39 @@ Cada estado va a tener un handlers que hay que definir
 #include "buffer.h"
 #include "selector.h"
 
+#include <fcntl.h>
 #include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
+#define MS_TEXT_SIZE           13
+#define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
+#define MAIL_DIR_SIZE          4
+
+typedef enum request_state (*state_handler)(const uint8_t c, struct request_parser* p);
+
 unsigned int request_read_handler(struct selector_key* key);
+// unsigned int request_data_handler(struct selector_key* key);
 unsigned int request_write_handler(struct selector_key* key);
+unsigned int request_process(struct selector_key* key, bool error);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
 void smtp_done(selector_key* key);
 const fd_handler* get_smtp_handler(void);
+void request_data_init(unsigned int state, struct selector_key* key);
+void request_data_close(unsigned int state, struct selector_key* key);
+unsigned int request_data_handler(struct selector_key* key);
+void on_done_init(const unsigned state, struct selector_key* key);
 
-static const struct state_definition smtp_states[] = {
+static const struct state_definition states_handlers[] = {
 	// definir los estados de la maquina de estados del protocolo SMTP
 	// no necesariamente tenemos que llenar todos los campos en cada estado
 
@@ -79,7 +96,7 @@ static const struct state_definition smtp_states[] = {
 	    .state = REQUEST_READ,
 	    .on_read_ready = request_read_handler,
 	    .on_arrival = request_read_init,
-		.on_departure = request_read_close,
+	    .on_departure = request_read_close,
 	},
 
 	{
@@ -87,7 +104,15 @@ static const struct state_definition smtp_states[] = {
 	    .on_write_ready = request_write_handler,
 	},
 	{
+	    .state = REQUEST_DATA,
+	    .on_read_ready = request_data_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
+	    .on_arrival = request_data_init,        // setteamos el parser. Abrimos el FD al archivo de salida.
+	    .on_departure = request_data_close,     // cerramos el parser
+
+	},
+	{
 	    .state = DONE,
+	    .on_arrival = on_done_init,
 	},
 	{
 	    .state = ERROR,
@@ -172,8 +197,8 @@ smtp_passive_accept(selector_key* key)
 	data->client_addr = client_addr;
 	data->stm.initial = REQUEST_WRITE;
 	data->stm.max_state = ERROR;
-	data->stm.states = smtp_states;
-
+	data->stm.states = states_handlers;
+	data->request_parser.state = request_helo;
 	buffer_init(&data->read_buffer, N(data->raw_buff_read), data->raw_buff_read);
 	buffer_init(&data->write_buffer, N(data->raw_buff_write), data->raw_buff_write);
 
@@ -192,7 +217,7 @@ smtp_passive_accept(selector_key* key)
 }
 
 // REQUEST WRITE HANDLERS
-unsigned int
+enum smtp_states
 request_write_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
@@ -224,54 +249,157 @@ request_write_handler(struct selector_key* key)
 void
 request_read_init(unsigned int state, struct selector_key* key)
 {
-	if (state != REQUEST_READ) {
-		smtp_data* data = ATTACHMENT(key);
-		data->request_parser.request = &data->request;
-		request_parser_init(&data->request_parser);
-	}
+	printf("request_read_init\n %d", state);
+	smtp_data* data = ATTACHMENT(key);
+	data->request_parser.request = &data->request;
+	request_parser_init(&data->request_parser);
 }
 
 // REQUEST READ HANDLERS
-unsigned int
+enum smtp_states
 request_read_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
-	// read data from socket
 	size_t count;
-	// pido un puntero para escribir, tambien me dice cuanto puedo escribir
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
 
-	int ret = REQUEST_READ;
+	smtp_states ret = REQUEST_READ;
 
 	if (recv_bytes > 0) {
 		buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
-		// const enum smtp_states st = stm_handler_read(&data->stm, key);
-
 		// procesamiento
 		bool error = false;
-		int st = request_consume(&data->read_buffer, &data->request_parser, &error);
-			if(request_is_done(st, 0)) {
-				// armado de la rta
-				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-				ret = REQUEST_WRITE;
+		request_state next_state = request_consume(&data->read_buffer, &data->request_parser, &error);
+		ret = request_process(key, error);
+		if (!error) {
+			data->request_parser.state = next_state;
+		}
+		else{
+			data->request_parser.state = data->request_parser.last_state;
+		}
+		
+		buffer_reset(&data->read_buffer);
 
-				uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
-				// acá entraría el tema del parser
-				memcpy(ptr, "200\r\n", 5);
-				buffer_write_adv(&data->write_buffer, 5);
-
-			} else {
-				ret = ERROR;
+		if(request_is_data(next_state)) {
+			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)){
+				ret = REQUEST_DATA;
 			}
 		}
-
-		
+		// if (request_is_done(next_state, &error)) {
+		// 	// armado de la rta
+		// 	if (!error) {
+		// 		// no lei todos los bytes del buffer, pero quiero consumirlos como si hubiera terminado
+		// 		ret = request_process(key);
+		// 		data->request_parser.state = next_state;
+		// 	} else {
+		// 		// acá vamos a tener errores de verbo, de secuencialidad o de formato de argumento
+		// 		buffer_reset(&data->read_buffer);
+		// 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+		// 			uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+		// 			memcpy(ptr, "502 5.5.2 Error: command not recognized\n", 41);
+		// 			buffer_write_adv(&data->write_buffer, 41);
+		// 			ret = REQUEST_WRITE;
+		// 		}
+		// 	}
+		// } else if (request_is_data(next_state)) {
+		// 	ret = REQUEST_DATA;
+		// 	data->request_parser.state = next_state;
+		// }
 
 	} else {
 		ret = ERROR;
 	}
 	return ret;
+}
+// unsigned int request_data_handler(struct selector_key* key){
+// 	/*
+// 		Tenemos que leer hasta encontrar \r\n .
+// 	*/
+
+// }
+enum smtp_states
+request_process(struct selector_key* key, bool error)
+{
+	// Los verbos están chequeados ya, los Argumentos solo cumplen con los limitadores
+
+	smtp_data* data = ATTACHMENT(key);
+	request_state current_state = data->request_parser.state;
+
+	size_t count;
+
+	if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_WRITE)) {
+		return ERROR;
+	}
+
+	uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	const char* message;
+	if (error) {
+		message = state_messages[current_state].error;
+	} else {
+		message = state_messages[current_state].success;
+	}
+	size_t len = strlen(message);
+	// if (count < len) {
+	// 	buffer_compact(&data->write_buffer);
+	// }
+	memcpy(ptr, message, len);
+	buffer_write_adv(&data->write_buffer, len);
+
+	return REQUEST_WRITE;
+	/*
+	    if (strcasecmp(data->request_parser.request->verb, "HELO") == 0 ||
+	        strcasecmp(data->request_parser.request->verb, "EHLO") == 0) {
+	        // cambiar el estado a REQUEST_READ
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            // acá entraría el tema del parser
+	            memcpy(ptr,
+	                   "250-foo.pdc\r\n250-PIPELINING\r\n250-SIZE "
+	                   "10240000\r\n250-VRFY\r\n250-ETRN\r\n250-STARTTLS\r\n250-ENHANCEDSTATUSCODES\r\n250-8BITMIME\r\n250-"
+	                   "DSN\r\n250-SMTPUTF8\r\n250 CHUNKING\r\n",
+	                   159);
+	            buffer_write_adv(&data->write_buffer, 159);
+	            ret = REQUEST_WRITE;
+	        }
+	    } else if (strcasecmp(data->request_parser.request->verb, "MAIL FROM") == 0) {
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            memcpy(data->mail_from, data->request_parser.request->arg, N(data->request_parser.request->arg));
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            memcpy(ptr, "250 2.1.0 Ok\n", 14);
+	            buffer_write_adv(&data->write_buffer, 14);
+	            ret = REQUEST_WRITE;
+	        }
+
+	    } else if (strcasecmp(data->request_parser.request->verb, "RCPT TO") == 0) {
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            memcpy(data->rcpt_to, data->request_parser.request->arg, N(data->request_parser.request->arg));
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            memcpy(ptr, "250 2.1.5 Ok\n", 14);
+	            buffer_write_adv(&data->write_buffer, 14);
+	            ret = REQUEST_WRITE;
+	        }
+
+	    } else if (strcasecmp(data->request_parser.request->verb, "DATA") == 0) {
+	        // cambiar el estado a REQUEST_DATA
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            memcpy(ptr, "250 2.0.0 Ok: queued as FIXME\n", 30);
+	            buffer_write_adv(&data->write_buffer, 30);
+	            ret = REQUEST_WRITE;
+	        }
+	    } else if (strcasecmp(data->request_parser.request->verb, "QUIT") == 0) {
+	        if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+	            uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	            memcpy(ptr, "221 2.0.0 Bye\n", 14);
+	            buffer_write_adv(&data->write_buffer, 14);
+	            ret = DONE;
+	        }
+	    } else {
+	        ret = ERROR;
+	    }
+	    return ret;
+	    */
 }
 
 void
@@ -281,4 +409,290 @@ request_read_close(unsigned int state, struct selector_key* key)
 		smtp_data* data = ATTACHMENT(key);
 		request_close(&data->request_parser);
 	}
+}
+
+char*
+strndup(const char* s, size_t n)
+{
+	char* p = memchr(s, '\0', n);
+	if (p != NULL)
+		n = p - s;
+	p = malloc(n + 1);
+	if (p != NULL) {
+		memcpy(p, s, n);
+		p[n] = '\0';
+	}
+	return p;
+}
+
+int
+create_directory_if_not_exists(char* maildir)
+{
+	// maildir tiene la forma mail/<domain>/<user>
+	// i should check if the maildir exists, if not, create it
+	struct stat st = { 0 };
+	if (stat(maildir, &st) == -1) {
+		if (mkdir(maildir, 0777) == -1) {  // if I want anyone to read, write or execute then i should use 0777
+			perror("mkdir");
+			return -1;
+		}
+	}
+	return 0;
+}
+
+static char*
+get_and_create_maildir(char* mail_from)
+{
+	int maildir_size = MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE;
+	char* maildir = malloc(maildir_size);  // Consider dynamic sizing based on mail_from length
+	if (maildir == NULL) {
+		perror("malloc");
+		return NULL;
+	}
+	char* domain = strchr(mail_from, '@');
+	if (domain == NULL) {
+		free(maildir);
+		perror("strchr");
+		return NULL;
+	}
+	domain++;
+	char local_user[LOCAL_USER_NAME_SIZE] = { 0 };
+	strncpy(local_user, mail_from, domain - mail_from - 1);
+	snprintf(maildir, maildir_size, "mail/%s/%s", domain, local_user);
+
+	// Create mail if it doesn't exist
+	if (create_directory_if_not_exists("mail") == -1) {
+		free(maildir);
+		return NULL;
+	}
+
+	// Create mail/<domain> if it doesn't exist
+	char domain_dir[100] = { 0 };
+	snprintf(domain_dir, sizeof(domain_dir), "mail/%s", domain);
+	if (create_directory_if_not_exists(domain_dir) == -1) {
+		free(maildir);
+		return NULL;
+	}
+
+	// Create mail/<domain>/<user> if it doesn't exist
+	if (create_directory_if_not_exists(maildir) == -1) {
+		free(maildir);
+		return NULL;
+	}
+
+	return maildir;
+}
+
+void
+request_data_init(unsigned int state, struct selector_key* key)
+{
+	printf("request_data_init\n %d", state);
+	// we need to print message 354 End data with <CR><LF>.<CR><LF>\n
+
+	const char* message = "354 End data with <CR><LF>.<CR><LF>\n";
+	size_t message_len = strlen(message);
+
+	ssize_t bytes_sent = send(key->fd, message, message_len, 0);
+	if (bytes_sent < 0) {
+		perror("send");
+		return;
+	} else if ((size_t)bytes_sent < message_len) {
+		perror("send");
+		return;
+	}
+
+	// we need to re-open the request_parser to start reading the data
+	smtp_data* data = ATTACHMENT(key);
+	data->request_parser.request = &data->request;
+	request_parser_data_init(&data->request_parser);
+	char data_verb[] = "DATA";
+	strcpy(data->request_parser.request->verb, data_verb);
+
+	// We need to create a file in the maildir associated with the client
+	// For doing so, we need to get the maildir associated with the client
+	// My server doesn't work as a relay server, so we just need to create a file in the maildir associated with the
+	// client
+
+	char* maildir = get_and_create_maildir((char*)data->mail_from);
+	if (maildir == NULL) {
+		perror("get_and_create_maildir");
+		return;
+	}
+
+	// now we create tmp dir within maildir
+	char full_dir[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = { 0 };
+	snprintf(full_dir, sizeof(full_dir), "%s/tmp", maildir);
+	if (create_directory_if_not_exists(full_dir) == -1) {
+		perror("create_directory_if_not_exists");
+		return;
+	}
+
+	char filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
+	              MS_TEXT_SIZE] = { 0 };
+	time_t ms = time(NULL);
+	// filename like mail/<domain>/<user>/tmp/<timestamp>
+	snprintf(filename, sizeof(filename), "%s/tmp/%ld", maildir, ms);
+
+	int fd = open(filename, O_CREAT | O_RDWR, 0777);
+	if (fd < 0) {
+		perror("open");
+		return;
+	}
+
+	free(maildir);
+
+	data->output_fd = fd;
+
+	// We will write periodically to this file. Every time the buffer in the parser is full, we will write to the
+	// file Also, we will write if we find a \r\n.\r\n in the buffer
+}
+
+void
+request_data_close(unsigned int state, struct selector_key* key)
+{
+	if (state == REQUEST_DATA) {
+		smtp_data* data = ATTACHMENT(key);
+		// we copy the mail from mail/<domain>/<user>/tmp/<timestamp> to mail/<domain>/<rcpt_to>/new/<timestamp>
+		// we need to create the new dir if it doesn't exist
+
+		char* maildir = get_and_create_maildir((char*)data->rcpt_to);
+		if (maildir == NULL) {
+			perror("get_and_create_maildir");
+			return;
+		}
+
+		// now we create new dir within maildir
+		char full_dir[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = {
+			0
+		};
+		snprintf(full_dir, sizeof(full_dir), "%s/new", maildir);
+		if (create_directory_if_not_exists(full_dir) == -1) {
+			perror("create_directory_if_not_exists");
+			return;
+		}
+
+		free(maildir);
+
+		char filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
+		              MS_TEXT_SIZE] = { 0 };
+
+		time_t ms = time(NULL);
+		snprintf(filename, sizeof(filename), "%s/%ld", full_dir, ms);
+
+		int new_fd = open(filename, O_CREAT | O_WRONLY, 0777);
+		if (new_fd < 0) {
+			perror("open");
+			return;
+		}
+
+		// we need to copy the file from the tmp dir to the new dir
+		// we need to read the file from the tmp dir
+
+		char* domain = strchr((char*)data->rcpt_to, '@') + 1;
+		char local_user[LOCAL_USER_NAME_SIZE] = { 0 };
+
+		char tmp_filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE +
+		                  1 + MS_TEXT_SIZE] = { 0 };
+		snprintf(tmp_filename, sizeof(tmp_filename), "mail/%s/%s/tmp/%ld", domain, local_user, ms);
+
+		// the fd from tmp file is in data->output_fd
+
+		// we need to read from the tmp file and write to the new file
+
+		int tmp_fd = data->output_fd;
+
+		char buffer[1024] = { 0 };
+
+		ssize_t bytes_read = 0;
+		lseek(tmp_fd, 0, SEEK_SET);  // we need to go to the beginning of the file because we have already written to it
+
+		// This while loop is provisional. We need to read the whole file and apply the transformation if there is any
+		// The reason for doing it as a while loop is because we haven't implemented transformations yet
+
+		while ((bytes_read = read(tmp_fd, buffer, sizeof(buffer))) > 0) {
+			ssize_t bytes_written = write(new_fd, buffer, bytes_read);
+			if (bytes_written < 0) {
+				perror("write");
+				return;
+			}
+		}
+
+		if (bytes_read < 0) {
+			perror("read");
+			return;
+		}
+
+		// we close the new file
+
+		close(new_fd);
+
+		// we close the tmp file
+
+		request_close(&data->request_parser);
+		close(data->output_fd);  // close the file
+	}
+}
+
+unsigned int
+request_data_handler(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+	size_t count;
+	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
+	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
+
+	int ret = REQUEST_DATA;
+
+	if (recv_bytes > 0) {
+		buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
+		// procesamiento
+		bool error = false;
+		int st = request_consume(&data->read_buffer,
+		                         &data->request_parser,
+		                         &error);  // no necesitamos usar otro parser distinto. Ya se encuentra implementada
+		                                   // la lógica de data en este
+		if (request_is_done(st, 0)) {
+			// armado de la rta
+			if (!error) {
+				// no lei todos los bytes del buffer, pero quiero consumirlos como si hubiera terminado
+				ret = request_process(key, error);
+			} else {
+				buffer_reset(&data->read_buffer);
+				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+					uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+					memcpy(ptr, "502 5.5.2 Error: command not recognized\n", 41);
+					buffer_write_adv(&data->write_buffer, 41);
+					ret = REQUEST_WRITE;
+				}
+			}
+		}
+		if (request_file_flush(st,
+		                       &data->request_parser)) {  // request_file_flush returns true if the buffer is full
+			                                              // or the request is done
+
+			int fd = data->output_fd;
+			char* ptr = data->request_parser.request->data;
+
+			int index = data->request_parser.i;
+
+			int written = write(fd, ptr, index);
+			if (written < 0) {
+				perror("write");
+				return ERROR;
+			}
+		}
+
+	} else {
+		ret = ERROR;
+	}
+	return ret;
+}
+
+void
+on_done_init(const unsigned state, struct selector_key* key)
+{
+	printf("on_done_init\n %d", state);
+	smtp_data* data = ATTACHMENT(key);
+	free(data);
+	// anything else to free?
 }
