@@ -83,7 +83,7 @@ unsigned int request_read_handler(struct selector_key* key);
 // unsigned int request_data_handler(struct selector_key* key);
 // unsigned int request_done_handler(struct selector_key* key);
 unsigned int request_write_handler(struct selector_key* key);
-unsigned int request_process(struct selector_key* key, bool* error);
+unsigned int request_process(struct selector_key* key);
 unsigned int request_data_handler(struct selector_key* key);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
@@ -129,8 +129,9 @@ static const struct state_definition states_handlers[] = {
 
 };
 
-process_handler handlers_table[] = { [EHLO] = handle_helo, [FROM] = handle_from, [TO] = handle_to, [DATA] = handle_data,
-	                                 [BODY] = handle_body, [ERROR] = NULL };
+process_handler handlers_table[] = { [EHLO] = handle_helo, [FROM] = handle_from, [TO] = handle_to,
+	                                 [DATA] = handle_data, [BODY] = handle_body, [ERROR] = NULL };
+
 
 //
 static void read_handler(struct selector_key* key);
@@ -294,18 +295,14 @@ request_read_handler(struct selector_key* key)
 	enum request_state next_state = request_consume(&data->read_buffer, &data->request_parser, &error);
 
 	if (request_is_done(next_state, &error)) {
-		// if (read_complete(next_state)) {
-		ret = request_process(key, &error);
-		if (!error) {
-			// data->request_parser.state = next_state;
-		}
+		ret = request_process(key);
 	}
 
 	return ret;
 }
 
 socket_state
-request_process(struct selector_key* key, bool* error)
+request_process(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
 	// WRAPPER de los state process habdlers
@@ -313,26 +310,29 @@ request_process(struct selector_key* key, bool* error)
 	char msg[60];
 	smtp_state st = data->state;
 
-	process_handler fn = handlers_table[st];
-
-	smtp_state next = fn(key, error, msg);
-	// LLAMAR A HANDLERS NO SECUENCIALES
-
-	// LLAMAS AL SECUENCIAL
-
 	if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_WRITE)) {
 		return REQUEST_ERROR;
 	}
 	size_t count;
 
 	uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+
+	// LLAMAR A HANDLERS NO SECUENCIALES
+	bool is_noop = handle_noop(key, msg);
+	bool is_rset = handle_reset(key, msg);
+
+	// LLAMAR AL SECUENCIAL
+	if (!(is_noop || is_rset)) {
+		process_handler fn = handlers_table[st];
+		smtp_state next = fn(key, msg);
+		data->state = next;
+	}
+
 	size_t len = strlen(msg);
-	msg[len++] = '\n';
 	msg[len++] = '\0';
 	memcpy(ptr, msg, len);
 	buffer_write_adv(&data->write_buffer, len);
 
-	data->state = next;
 
 	return REQUEST_WRITE;
 }
@@ -361,8 +361,7 @@ request_data_handler(struct selector_key* key)
 	enum request_state state = request_consume_data(&data->read_buffer, &data->request_parser, &error);
 
 	if (request_is_done(state, 0)) {
-		// if (read_complete(next_state)) {
-		ret = request_process(key, &error);
+		ret = request_process(key);
 	}
 	/*
 	if (request_file_flush(st,
