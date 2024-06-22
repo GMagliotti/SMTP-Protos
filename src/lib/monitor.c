@@ -3,6 +3,7 @@
 #include "selector.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <unistd.h>  // this library is for the Network Order functions
@@ -36,7 +37,7 @@ enum status
 void
 monitor_done(selector_key* key)
 {
-	monitor_data* data = ATTACHMENT(key);
+	monitor_data* data = MONITOR_ATTACHMENT(key);
 	free(data);
 }
 
@@ -200,11 +201,17 @@ handle_udp_packet(struct selector_key* key)
 
 	data->client_addr_len = sizeof(data->client_addr);
 
-	int bytes_read = recvfrom(
-	    key->fd, data->raw_buff_read, BUFFER_SIZE, 0, (struct sockaddr*)&data->client_addr, &data->client_addr_len);
+	int bytes_read = recvfrom(key->fd,
+	                          data->raw_buff_read,
+	                          MONITOR_BUFFER_SIZE,
+	                          0,
+	                          (struct sockaddr*)&data->client_addr,
+	                          &data->client_addr_len);
 
 	if (bytes_read < 0) {
-		perror("recvfrom");
+		if (errno != EAGAIN) {  // errno is in library errno.h, EAGAIN is in library errno.h
+			perror("recvfrom");
+		}
 		monitor_done(key);
 		return;
 	}
@@ -218,8 +225,12 @@ handle_udp_packet(struct selector_key* key)
 		// should we do this in a separate thread?
 		process_valid_command(data->command, data->raw_buff_write, &status);
 
-		send_response(
-		    key->fd, data->raw_buff_write, BUFFER_SIZE, 0, (struct sockaddr*)&data->client_addr, data->client_addr_len);
+		send_response(key->fd,
+		              data->raw_buff_write,
+		              MONITOR_BUFFER_SIZE,
+		              0,
+		              (struct sockaddr*)&data->client_addr,
+		              data->client_addr_len);
 
 	} else {
 		if (status < S_SIGNATURE_ERR) {  // if status = S_SIGNATURE_ERR, we don't send a response
@@ -227,7 +238,7 @@ handle_udp_packet(struct selector_key* key)
 			data->raw_buff_write[5] = status;
 			send_response(key->fd,
 			              data->raw_buff_write,
-			              BUFFER_SIZE,
+			              MONITOR_BUFFER_SIZE,
 			              0,
 			              (struct sockaddr*)&data->client_addr,
 			              data->client_addr_len);

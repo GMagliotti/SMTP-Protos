@@ -16,7 +16,7 @@
 #define REQUEST_SIZE 14
 #define CMD1         0x00
 #define DEFAULT_HOST "127.0.0.1"
-#define DEFAULT_PORT "2525"
+#define DEFAULT_PORT "2526"
 
 enum commands
 {

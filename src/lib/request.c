@@ -147,6 +147,7 @@ request_file_flush(request_state st, request_parser* p)
 {
 	// es necesario flushear si estamos en data_body y si el buffer está lleno
 	// o bien si estamos en doneF
+	return st == request_flush || p->state == request_done;
 }
 
 void
@@ -319,7 +320,7 @@ handle_body(const uint8_t c, request_parser* p)
 	enum request_state next;
 	switch (c) {
 		case '\r':
-			if (p->i > 1 && p->request->data[p->i-1] == '.' && p->request->data[p->i - 2] == '\n') {
+			if (p->i > 1 && p->request->data[p->i - 1] == '.' && p->request->data[p->i - 2] == '\n') {
 				p->request->data[p->i - 3] = '\0';
 				p->next_state = request_done;
 				p->last_state = request_body;

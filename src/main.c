@@ -52,7 +52,7 @@ main(const int argc, const char** argv)
 			return 1;
 		}
 		if (sl == 2526) {
-			fprintf(stderr, "port %d is reserved for monitoring\n", sl);
+			fprintf(stderr, "port %ld is reserved for monitoring\n", sl);
 			return 1;
 		}
 		port = sl;
@@ -110,15 +110,15 @@ main(const int argc, const char** argv)
 
 	// for monitoring
 
-	const int monitor_server6 = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+	const int monitor_server6 = socket(AF_INET6, SOCK_DGRAM, 0);
 	if (monitor_server6 < 0) {
-		err_msg = "unable to create IPv6 monitoring socket";
+		err_msg = "unable to create IPv6 socket";
 		goto finally;
 	}
 
-	const int monitor_server4 = socket(AF_INET, SOCK_STREAM, 0);
+	const int monitor_server4 = socket(AF_INET, SOCK_DGRAM, 0);
 	if (monitor_server4 < 0) {
-		err_msg = "unable to create IPv4 monitoring socket";
+		err_msg = "unable to create IPv4 socket";
 		goto finally;
 	}
 
@@ -326,6 +326,12 @@ finally:
 	}
 	if (server4 >= 0) {
 		close(server4);
+	}
+	if (monitor_server6 >= 0) {
+		close(monitor_server6);
+	}
+	if (monitor_server4 >= 0) {
+		close(monitor_server4);
 	}
 	return ret;
 }

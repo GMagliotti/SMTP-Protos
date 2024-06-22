@@ -8,9 +8,8 @@
 #include <string.h>
 #include <sys/socket.h>
 
-#define ATTACHMENT(key) ((monitor_data*)(key)->data)
-#define N(x)            (sizeof(x) / sizeof((x)[0]))  // number of elements in an array
-#define BUFFER_SIZE     22                            // total bytes of UDP packet: 8 (header) + 14 (data) = 22
+#define MONITOR_ATTACHMENT(key) ((monitor_data*)(key)->data)
+#define MONITOR_BUFFER_SIZE     22  // total bytes of UDP packet: 8 (header) + 14 (data) = 22
 /*
                      0      7 8     15 16    23 24    31
                     +--------+--------+--------+--------+
@@ -53,14 +52,6 @@
 
 // the monitor protocol is a simple protocol that allows the client to send a message to the server
 
-enum monitor_states
-{
-	M_REQ_READ,
-	M_REQ_WRITE,
-	ERROR,
-	DONE,
-};
-
 typedef struct monitor_data
 {
 	int client_fd;  // socket file descriptor
@@ -68,8 +59,8 @@ typedef struct monitor_data
 	socklen_t client_addr_len;
 
 	// raw buffer
-	uint8_t raw_buff_write[BUFFER_SIZE];
-	uint8_t raw_buff_read[BUFFER_SIZE];
+	uint8_t raw_buff_write[MONITOR_BUFFER_SIZE];
+	uint8_t raw_buff_read[MONITOR_BUFFER_SIZE];
 
 	// protocol data
 	uint16_t signature;
