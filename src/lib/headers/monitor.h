@@ -54,9 +54,9 @@
 
 typedef struct monitor_collection_data_t
 {
-	unsigned long long sent_bytes;
-	unsigned long curr_connections;
-	unsigned long total_connections;
+	uint64_t sent_bytes;
+	uint32_t curr_connections;
+	uint32_t total_connections;
 } monitor_collection_data_t;
 
 void monitor_add_connection(void);

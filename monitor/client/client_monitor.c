@@ -16,17 +16,18 @@
 void
 print_bytes_recieved(uint8_t* buffer, int command)
 {
-	uint16_t qty;
+	uint32_t qty;
 	uint64_t bytes;
 	switch (command) {
 		case HIST_C:
-			qty = (buffer[6] << 8) | buffer[7];
-			qty = ntohs(qty);
+			// qty need to be filled with buffer[6] to buffer[9]
+			qty = (buffer[6] << 24) | (buffer[7] << 16) | (buffer[8] << 8) | buffer[9];
+			qty = ntohl(qty);
 			printf("Historical connections: %d\n", qty);
 			return;
 		case CONC_C:
-			qty = (buffer[6] << 8) | buffer[7];
-			qty = ntohs(qty);
+			qty = (buffer[6] << 24) | (buffer[7] << 16) | (buffer[8] << 8) | buffer[9];
+			qty = ntohl(qty);
 			printf("Simultaneous connections: %d\n", qty);
 			return;
 		case BYTES_T:

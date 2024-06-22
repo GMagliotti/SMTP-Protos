@@ -13,6 +13,12 @@
 #define VERSION   0x00
 #define TOKEN     0xffe91a2b3c4d5e6f
 
+static struct monitor_collection_data_t collected_data = {
+	.sent_bytes = 0,
+	.curr_connections = 0,
+	.total_connections = 0,
+};
+
 enum commands
 {
 	CMD_HIST_C = 0x00,
@@ -72,24 +78,26 @@ void
 process_valid_command(uint8_t command, uint8_t* response, uint8_t* status)
 {
 	*status = S_SUCCESS;
-	uint16_t val;
+	uint32_t val;
+	uint64_t bytes = collected_data.sent_bytes;
 	switch (command) {
 		case 0x00:
-			val = 10503;
-			val = htons(val);
-			response[6] = (val >> 8) & 0xff;
-			response[7] = val & 0xff;
+			val = htonl(collected_data.total_connections);
+			for (int i = 0; i < 4; i++) {
+				response[6 + i] = (val >> (8 * i)) & 0xff;
+			}
 			break;
 		case 0x01:
+			val = htonl(collected_data.curr_connections);
+			for (int i = 0; i < 4; i++) {
+				response[6 + i] = (val >> (8 * i)) & 0xff;
+			}
+			break;
 		case 0x02:
-			response[6] = 0x29;  // hardcoded
-			response[7] = 0x07;
-			response[8] = 0x00;
-			response[9] = 0x00;
-			response[10] = 0x00;
-			response[11] = 0x00;
-			response[12] = 0x00;
-			response[13] = 0x00;
+			// we send the total bytes sent as if they were 8 different bytes in an array
+			for (int i = 0; i < 8; i++) {
+				response[6 + i] = (bytes >> (8 * (7 - i))) & 0xff;
+			}
 			break;
 		case 0x03:
 			response[6] = 0x03;
@@ -248,12 +256,6 @@ handle_udp_packet(struct selector_key* key)
 	// we free the data
 	monitor_done(key);
 }
-
-static struct monitor_collection_data_t collected_data = {
-	.sent_bytes = 0,
-	.curr_connections = 0,
-	.total_connections = 0,
-};
 
 void
 monitor_add_connection(void)
