@@ -252,7 +252,7 @@ main(int argc, char* argv[])
 
 	// Establecemos un timeout de 5 segundos para la respuesta
 	struct timeval tv;  // Timeout for recvfrom(). It is in library sys/time.h
-	tv.tv_sec = 60 * 10;
+	tv.tv_sec = 5;
 	tv.tv_usec = 0;
 	if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
 		perror("Error setting timeout");
