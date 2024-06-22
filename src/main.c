@@ -12,6 +12,7 @@
  */
 #include "lib/headers/selector.h"
 #include "lib/headers/smtp.h"
+#include "logger.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -176,6 +177,10 @@ main(const int argc, const char** argv)
 		goto finally;
 	}
 
+	// logger
+	logger_init(selector, "", NULL);
+	logger_set_level(LOG_DEBUG);
+
 	// main loop to serve clients
 	while (!done) {
 		err_msg = NULL;
@@ -213,5 +218,6 @@ finally:
 	if (server4 >= 0) {
 		close(server4);
 	}
+	logger_finalize();
 	return ret;
 }
