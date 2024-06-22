@@ -42,7 +42,7 @@
 # 	mkdir -p build
 # 	$(CC) -c $(CFLAGS) $< -o $@
 
-CFLAGS:= -std=c11 -pedantic  -pedantic-errors -g -Wall  -Wextra -D_POSIX_C_SOURCE=200112L -Werror -fsanitize=address   -Ilib/headers -Itest/headers
+CFLAGS:= -std=c11 -pedantic  -pedantic-errors -pthread -g -Wall  -Wextra -D_POSIX_C_SOURCE=200112L -Werror -fsanitize=address   -Ilib/headers -Itest/headers
 SMTPD_CLI:= smtpd.elf
 LIB_OBJS:= build/args.o build/netutils.o build/parser.o build/stm.o build/selector.o build/buffer.o build/smtp.o build/request.o build/monitor.o
 MAIN_OBJ:= build/main.o

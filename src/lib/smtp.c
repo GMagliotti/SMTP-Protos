@@ -68,6 +68,7 @@ Cada estado va a tener un handlers que hay que definir
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <monitor.h>
 
 #define MS_TEXT_SIZE           13
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
@@ -150,6 +151,7 @@ close_handler(struct selector_key* key)
 {
 	stm_handler_close(&ATTACHMENT(key)->stm, key);
 	smtp_done(key);
+	monitor_close_connection();
 }
 
 static fd_handler smtp_handler = {
@@ -214,6 +216,9 @@ smtp_passive_accept(selector_key* key)
 		smtp_done(key);
 		return;
 	}
+
+	monitor_add_connection();
+	return;
 }
 
 // REQUEST WRITE HANDLERS
@@ -229,6 +234,7 @@ request_write_handler(struct selector_key* key)
 	ptr = buffer_read_ptr(buff, &count);
 
 	send_bytes = send(key->fd, ptr, count, MSG_NOSIGNAL);
+	monitor_add_sent_bytes(send_bytes);
 
 	int ret;
 	if (send_bytes >= 0) {

@@ -52,6 +52,16 @@
 
 // the monitor protocol is a simple protocol that allows the client to send a message to the server
 
+typedef struct monitor_collection_data_t
+{
+	unsigned long long sent_bytes;
+	unsigned long curr_connections;
+	unsigned long total_connections;
+} monitor_collection_data_t;
+
+void monitor_add_connection(void);
+void monitor_close_connection(void);
+
 typedef struct monitor_data
 {
 	int client_fd;  // socket file descriptor
@@ -76,5 +86,6 @@ typedef struct monitor_data
 } monitor_data;
 
 void handle_udp_packet(struct selector_key* key);
+void monitor_add_sent_bytes(unsigned long bytes);
 
 #endif
