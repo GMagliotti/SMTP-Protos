@@ -79,7 +79,7 @@ process_valid_command(uint8_t command, uint8_t* response, uint8_t* status)
 {
 	*status = S_SUCCESS;
 	uint32_t val;
-	uint64_t bytes = collected_data.sent_bytes;
+	uint64_t bytes;
 	switch (command) {
 		case 0x00:
 			val = htonl(collected_data.total_connections);
@@ -94,9 +94,10 @@ process_valid_command(uint8_t command, uint8_t* response, uint8_t* status)
 			}
 			break;
 		case 0x02:
+			bytes = collected_data.sent_bytes;
 			// we send the total bytes sent as if they were 8 different bytes in an array
 			for (int i = 0; i < 8; i++) {
-				response[6 + i] = (bytes >> (8 * (7 - i))) & 0xff;
+				response[6 + i] = (bytes >> (8 * i)) & 0xff;
 			}
 			break;
 		case 0x03:

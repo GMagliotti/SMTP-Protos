@@ -16,24 +16,28 @@
 void
 print_bytes_recieved(uint8_t* buffer, int command)
 {
-	uint32_t qty;
-	uint64_t bytes;
+	uint32_t qty = 0;
+	uint64_t bytes = 0;
 	switch (command) {
 		case HIST_C:
 			// qty need to be filled with buffer[6] to buffer[9]
-			qty = (buffer[6] << 24) | (buffer[7] << 16) | (buffer[8] << 8) | buffer[9];
+			for (int i = 0; i < 4; i++) {
+				qty |= (uint32_t)buffer[6 + i] << (8 * i);
+			}
 			qty = ntohl(qty);
-			printf("Historical connections: %d\n", qty);
+			printf("Historical connections: %u\n", qty);
 			return;
 		case CONC_C:
-			qty = (buffer[6] << 24) | (buffer[7] << 16) | (buffer[8] << 8) | buffer[9];
+			for (int i = 0; i < 4; i++) {
+				qty |= (uint32_t)buffer[6 + i] << (8 * i);
+			}
 			qty = ntohl(qty);
-			printf("Simultaneous connections: %d\n", qty);
+			printf("Simultaneous connections: %u\n", qty);
 			return;
 		case BYTES_T:
-			bytes = ((uint64_t)buffer[6] << 56) | ((uint64_t)buffer[7] << 48) | ((uint64_t)buffer[8] << 40) |
-			        ((uint64_t)buffer[9] << 32) | ((uint64_t)buffer[10] << 24) | ((uint64_t)buffer[11] << 16) |
-			        ((uint64_t)buffer[12] << 8) | (uint64_t)buffer[13];
+			for (int i = 0; i < 8; i++) {
+				bytes |= (uint64_t)buffer[6 + i] << (8 * i);
+			}
 			printf("Transfered bytes: %lu\n", bytes);
 			return;
 		case TRANS_S:
