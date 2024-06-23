@@ -73,10 +73,6 @@ Cada estado va a tener un handlers que hay que definir
 #include <time.h>
 #include <unistd.h>
 
-#define MS_TEXT_SIZE           13
-#define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
-#define MAIL_DIR_SIZE          4
-
 typedef enum request_state (*state_handler)(const uint8_t c, struct request_parser* p);
 const fd_handler* get_smtp_handler(void);
 
@@ -368,7 +364,8 @@ request_data_handler(struct selector_key* key)
 	// procesamiento
 	bool error = false;
 
-	enum request_state state = request_consume_data(&data->read_buffer, &data->request_parser, &error);
+	enum request_state state =
+	    request_consume_data(&data->read_buffer, &data->request_parser, &data->data_size, &error);
 
 	if (request_is_done(state, 0)) {
 		// if (read_complete(next_state)) {
@@ -465,6 +462,9 @@ request_data_close(unsigned int state, struct selector_key* key)
 			return;
 		}
 
+		time_t ms = time(NULL);
+		register_mail(data->mail_from, data->rcpt_to, ms, data->data_size);
+
 		// now we create new dir within maildir
 		char full_dir[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = {
 			0
@@ -480,7 +480,6 @@ request_data_close(unsigned int state, struct selector_key* key)
 		char filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
 		              MS_TEXT_SIZE] = { 0 };
 
-		time_t ms = time(NULL);
 		snprintf(filename, sizeof(filename), "%s/%ld", full_dir, ms);
 
 		int new_fd = open(filename, O_CREAT | O_WRONLY, 0777);

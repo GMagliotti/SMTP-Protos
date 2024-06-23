@@ -45,12 +45,13 @@ request_consume(buffer* b, struct request_parser* p, bool* errored)
 }
 
 extern enum request_state
-request_consume_data(buffer* b, struct request_parser* p, bool* errored)
+request_consume_data(buffer* b, struct request_parser* p, ssize_t* data_size, bool* errored)
 {
 	enum request_state st = p->state;
 
 	while (buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
+		*data_size += 1;
 		st = request_parser_data_feed(p, c);
 		if (request_is_done(st, errored)) {
 			break;

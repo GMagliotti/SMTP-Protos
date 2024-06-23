@@ -47,7 +47,7 @@ enum request_state request_parser_data_feed(struct request_parser* p, const uint
  *   si el parsing se debió a una condición de error
  */
 enum request_state request_consume(buffer* b, struct request_parser* p, bool* errored);
-enum request_state request_consume_data(buffer* b, struct request_parser* p, bool* errored);
+enum request_state request_consume_data(buffer* b, struct request_parser* p, ssize_t* data_size, bool* errored);
 /**
  * Permite distinguir a quien usa socks_hello_parser_feed si debe seguir
  * enviando caracters o no.

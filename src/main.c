@@ -345,6 +345,7 @@ finally:
 	}
 
 	logger_finalize();
+	free_access_registry();
 
 	return ret;
 }
