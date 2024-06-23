@@ -8,7 +8,8 @@
 #include <strings.h>
 
 #define DATA "DATA"
-
+#define RSET "RSET"
+#define NOOP "NOOP"
 enum request_state verb(const uint8_t c, struct request_parser* p);
 enum request_state arg(const uint8_t c, struct request_parser* p);
 enum request_state body(const uint8_t c, struct request_parser* p);
@@ -156,10 +157,9 @@ verb(const uint8_t c, struct request_parser* p)
 			break;
 		case '\r':
 
-			if (strncasecmp(p->request->verb, DATA, strlen(DATA)) == 0) {
-				p->request->arg[p->i] = '\0';
+			if (strncasecmp(p->request->verb, DATA, strlen(DATA)) == 0  || strncasecmp(p->request->verb, RSET, strlen(RSET)) == 0 || strncasecmp(p->request->verb, NOOP, strlen(NOOP)) == 0) {
+				p->request->verb[p->i] = '\0';
 				p->i = 0;
-
 				next = request_cr;
 			} else {
 				next = request_error;
