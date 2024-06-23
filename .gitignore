@@ -61,8 +61,10 @@ dkms.conf
 
 # Mails
 src/mail/*
+src/lib/mail/*
 
 monitor/client/*
 monitor/*
 # Logs 
 src/log/*
+src/lib/log/*
