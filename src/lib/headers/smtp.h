@@ -65,6 +65,7 @@ typedef enum
 	REQUEST_READ = 0,
 	REQUEST_WRITE,
 	REQUEST_DATA,
+	REQUEST_XADM,
 	REQUEST_DONE,
 	REQUEST_ERROR,
 	// definir los estados de la maquina de estados del protocolo SMTP
@@ -72,5 +73,6 @@ typedef enum
 
 void smtp_passive_accept(selector_key* key);
 void destroy_socket(selector_key* data);
+int validate_admin_token(uint64_t token);
 
 #endif

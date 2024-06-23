@@ -13,6 +13,7 @@ Una Maquina de Estados para cada entrada del Selector:
 Una Maquina de estado para cada Cliente SM:
     * Estados relacionados con el protocolo
     * EHLO
+    * XADM
     * RCPT
     * FROM
     * DATA
@@ -82,13 +83,18 @@ unsigned int request_read_handler(struct selector_key* key);
 unsigned int request_write_handler(struct selector_key* key);
 unsigned int request_process(struct selector_key* key, bool* error);
 unsigned int request_data_handler(struct selector_key* key);
+unsigned int request_xadm_handler(struct selector_key* key);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
 void request_data_init(unsigned int state, struct selector_key* key);
 void request_data_close(unsigned int state, struct selector_key* key);
+void request_xadm_init(unsigned int state, struct selector_key* key);
+void request_xadm_close(unsigned int state, struct selector_key* key);
 void on_done_init(const unsigned state, struct selector_key* key);
 void smtp_done(selector_key* key);
 bool read_complete(enum request_state st);
+
+static uint64_t admin_token = 0xffe91a2b3c4d5e6f;
 
 int create_directory_if_not_exists(char* maildir);
 static char* get_and_create_maildir(char* mail_from);
@@ -115,6 +121,12 @@ static const struct state_definition states_handlers[] = {
 
 	},
 	{
+	    .state = REQUEST_XADM,
+	    .on_read_ready = request_xadm_handler,
+	    .on_arrival = request_xadm_init,
+	    .on_departure = request_xadm_close,
+	},
+	{
 	    .state = REQUEST_DONE,
 	    .on_write_ready = NULL,
 
@@ -126,13 +138,19 @@ static const struct state_definition states_handlers[] = {
 
 };
 
-process_handler handlers_table[] = { [EHLO] = handle_helo, [FROM] = handle_from, [TO] = handle_to,
-	                                 [DATA] = handle_data, [BODY] = handle_body, [ERROR] = NULL };
+process_handler handlers_table[] = { [EHLO] = handle_helo, [EHLO_DONE] = handle_ehlo_done, [TO] = handle_to,
+	                                 [DATA] = handle_data, [BODY] = handle_body,           [ERROR] = NULL };
 
 //
 static void read_handler(struct selector_key* key);
 static void write_handler(struct selector_key* key);
 static void close_handler(struct selector_key* key);
+
+int
+validate_admin_token(uint64_t token)
+{
+	return token == admin_token;
+}
 
 // BASICAMENTE LLAMAN A LOS HANDLERS DE LA MAQUINA DE ESTADOS
 static void
@@ -615,4 +633,53 @@ on_done_init(const unsigned state, struct selector_key* key)
 	smtp_data* data = ATTACHMENT(key);
 	free(data);
 	// anything else to free?
+}
+
+void
+request_xadm_init(unsigned int state, struct selector_key* key)
+{
+	printf("request_xadm_init\n %d", state);
+	smtp_data* data = ATTACHMENT(key);
+	data->request_parser.request = &data->request;
+	request_parser_xadm_init(&data->request_parser);
+}
+
+void
+request_xadm_close(unsigned int state, struct selector_key* key)
+{
+	if (state == REQUEST_XADM) {
+		smtp_data* data = ATTACHMENT(key);
+		request_close(&data->request_parser);
+	}
+}
+
+unsigned int
+request_xadm_handler(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+	size_t count;
+	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
+	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
+
+	socket_state ret = REQUEST_XADM;
+
+	if (recv_bytes <= 0) {
+		return REQUEST_ERROR;
+	}
+
+	buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
+	// procesamiento
+	bool error = false;
+
+	enum request_state next_state = request_consume_xadm(&data->read_buffer, &data->request_parser, &error);
+
+	if (request_is_done(next_state, &error)) {
+		// if (read_complete(next_state)) {
+		ret = request_process(key, &error);
+		if (!error) {
+			// data->request_parser.state = next_state;
+		}
+	}
+
+	return ret;
 }

@@ -8,7 +8,7 @@
 static bool extract_email(char* arg, char* email, size_t email_len);
 
 static const char* valid_commands[] = {
-	HELO_VERB, EHLO_VERB, MAIL_VERB, RCPT_VERB, DATA_VERB,
+	HELO_VERB, EHLO_VERB, XADM_VERB, MAIL_VERB, RCPT_VERB, DATA_VERB,
 };
 
 static bool
@@ -49,7 +49,22 @@ handle_helo(struct selector_key* key, bool* error, char* msg)
 	*error = false;
 	sprintf(msg, "TODO EN ARGY ES UNA JODA [EHLO]");  // TODO :
 
-	return FROM;
+	return EHLO_DONE;
+}
+smtp_state
+handle_xadm(struct selector_key* key, bool* error, char* msg)
+{
+	*error = false;
+
+	smtp_data* data = ATTACHMENT(key);
+	char* verb = data->request.verb;
+	if (strcasecmp(verb, XADM_VERB) != 0) {
+		sprintf(msg, "502 5.5.2 Error: Command Not Recognized");  // TODO :
+		*error = true;
+		return EHLO;
+	}
+
+	return EHLO;
 }
 smtp_state
 handle_from(struct selector_key* key, bool* error, char* msg)
@@ -61,11 +76,6 @@ handle_from(struct selector_key* key, bool* error, char* msg)
 
 	if (!is_valid(verb, MAIL_VERB, msg)) {
 		return FROM;
-	}
-
-	if (((char*)data->mail_from)[0] != '\0') {
-		sprintf(msg, "503 5.5.1 Error: nested MAIL command");
-		return TO;
 	}
 
 	char* arg = data->request.arg;
@@ -90,6 +100,20 @@ handle_from(struct selector_key* key, bool* error, char* msg)
 
 	return TO;
 }
+
+smtp_state
+handle_ehlo_done(struct selector_key* key, bool* error, char* msg)
+{
+	*error = false;
+
+	smtp_state ret = handle_from(key, error, msg);
+
+	if (ret == EHLO && !*error) {
+		ret = handle_xadm(key, error, msg);
+	}
+
+	return ret;
+}
 smtp_state
 handle_to(struct selector_key* key, bool* error, char* msg)
 {
@@ -103,6 +127,11 @@ handle_to(struct selector_key* key, bool* error, char* msg)
 	}
 
 	char* arg = data->request.arg;
+
+	if (((char*)data->mail_from)[0] != '\0') {
+		sprintf(msg, "503 5.5.1 Error: nested MAIL command");
+		return TO;
+	}
 
 	if (strncasecmp(arg, TO_PREFIX, strlen(TO_PREFIX)) != 0) {
 		sprintf(msg, "501 5.1.3 Bad recipient address syntax");
@@ -146,11 +175,10 @@ handle_body(struct selector_key* key, bool* error, char* msg)
 	smtp_data* data = ATTACHMENT(key);
 	*error = false;
 	// sprintf(msg, "501 5.1.3 Bad recipient address syntax");  // TODO NO est abien
-	char *body = (char*)data->data;
+	char* body = (char*)data->data;
 
 	sprintf(msg, "MAIL SENT, AGUANTE ARGENTINA !");  // TODO NO est abien
 	strcpy((char*)body, data->request.data);
-
 
 	// mandar el mail
 	memset(&data->request, 0, sizeof((data->request)));
@@ -184,7 +212,5 @@ handle_data(struct selector_key* key, bool* error, char* msg)
 	}
 	sprintf(msg, "354 End data with <CR><LF>.<CR><LF>");  // TODO :
 
-
 	return BODY;
 }
-

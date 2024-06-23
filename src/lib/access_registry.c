@@ -1,6 +1,6 @@
 #include "access_registry.h"
 
-#include <time.h>
+#include <sys/sendfile.h>
 // we will keep track of mails in two ways: by name of the sender and by time. Using tww linked lists.
 typedef struct mail_entry_t
 {
@@ -41,8 +41,8 @@ void
 register_mail(uint8_t* from, uint8_t* to, time_t time, ssize_t data_size)
 {
 	mail_entry_t* new_mail = (mail_entry_t*)malloc(sizeof(mail_entry_t));
-	strcpy(new_mail->from, from);
-	strcpy(new_mail->to, to);
+	strcpy((char*)new_mail->from, (char*)from);
+	strcpy((char*)new_mail->to, (char*)to);
 	new_mail->time = time;
 	new_mail->data_size = data_size;
 	new_mail->next_by_name = NULL;
@@ -53,7 +53,7 @@ register_mail(uint8_t* from, uint8_t* to, time_t time, ssize_t data_size)
 	} else {
 		mail_entry_t* current = access_registry->first_by_name;
 		mail_entry_t* previous = NULL;
-		while (current != NULL && strcmp(current->from, from) < 0) {
+		while (current != NULL && strcmp((char*)current->from, (char*)from) < 0) {
 			previous = current;
 			current = current->next_by_name;
 		}
@@ -120,7 +120,7 @@ print_mails_by_user(int fd, char* user)
 {
 	// we take advantage of the fact that the list is sorted by name
 	mail_entry_t* current = access_registry->first_by_name;
-	while (current != NULL && strcmp(current->from, user) < 0) {
+	while (current != NULL && strcmp((char*)current->from, user) < 0) {
 		current = current->next_by_name;
 	}
 	if (current == NULL) {
@@ -131,7 +131,7 @@ print_mails_by_user(int fd, char* user)
 	ssize_t bytes_sent;
 	char path[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
 	          MS_TEXT_SIZE] = { 0 };
-	while (current != NULL && strcmp(current->from, user) == 0) {
+	while (current != NULL && strcmp((char*)current->from, user) == 0) {
 		dprintf(fd, "From: %s\n", current->from);
 		dprintf(fd, "To: %s\n", current->to);
 		dprintf(fd, "Time: %ld\n", current->time);

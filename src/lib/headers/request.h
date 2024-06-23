@@ -10,6 +10,9 @@ enum request_state
 	request_cr,
 	request_data,
 	request_body,
+	request_xadm,
+	request_verb_xadm,
+	request_arg_xadm,
 	request_done,
 	request_error,
 
@@ -35,6 +38,7 @@ typedef struct request_parser
 
 void request_parser_init(struct request_parser* p);
 void request_parser_data_init(struct request_parser* p);
+void request_parser_xadm_init(struct request_parser* p);
 
 /** entrega un byte al parser. retorna true si se llego al final  */
 enum request_state request_parser_feed(struct request_parser* p, const uint8_t c);
@@ -48,6 +52,7 @@ enum request_state request_parser_data_feed(struct request_parser* p, const uint
  */
 enum request_state request_consume(buffer* b, struct request_parser* p, bool* errored);
 enum request_state request_consume_data(buffer* b, struct request_parser* p, ssize_t* data_size, bool* errored);
+enum request_state request_consume_xadm(buffer* b, struct request_parser* p, bool* errored);
 /**
  * Permite distinguir a quien usa socks_hello_parser_feed si debe seguir
  * enviando caracters o no.
