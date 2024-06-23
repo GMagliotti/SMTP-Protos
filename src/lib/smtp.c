@@ -57,6 +57,7 @@ Cada estado va a tener un handlers que hay que definir
 #include "selector.h"
 
 #include <fcntl.h>
+#include <monitor.h>
 #include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -68,7 +69,6 @@ Cada estado va a tener un handlers que hay que definir
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include <monitor.h>
 
 #define MS_TEXT_SIZE           13
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
@@ -150,7 +150,6 @@ static void
 close_handler(struct selector_key* key)
 {
 	stm_handler_close(&ATTACHMENT(key)->stm, key);
-	smtp_done(key);
 	monitor_close_connection();
 }
 
@@ -168,6 +167,10 @@ get_smtp_handler(void)
 void
 smtp_done(selector_key* key)
 {
+	selector_status status = selector_unregister_fd(key->s, key->fd);
+	if (status != SELECTOR_SUCCESS) {
+		perror("selector_unregister_fd");
+	}
 	smtp_data* data = ATTACHMENT(key);
 	free(data);
 }
@@ -218,6 +221,7 @@ smtp_passive_accept(selector_key* key)
 	}
 
 	monitor_add_connection();
+
 	return;
 }
 
@@ -280,15 +284,14 @@ request_read_handler(struct selector_key* key)
 		ret = request_process(key, error);
 		if (!error) {
 			data->request_parser.state = next_state;
-		}
-		else{
+		} else {
 			data->request_parser.state = data->request_parser.last_state;
 		}
-		
+
 		buffer_reset(&data->read_buffer);
 
-		if(request_is_data(next_state)) {
-			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)){
+		if (request_is_data(next_state)) {
+			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
 				ret = REQUEST_DATA;
 			}
 		}
