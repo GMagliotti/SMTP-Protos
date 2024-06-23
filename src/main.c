@@ -10,6 +10,7 @@
  * DNS utilizando getaddrinfo), pero toda esa complejidad está oculta en
  * el selector.
  */
+#include "lib/headers/access_registry.h"
 #include "lib/headers/monitor.h"
 #include "lib/headers/selector.h"
 #include "lib/headers/smtp.h"
@@ -289,6 +290,8 @@ main(const int argc, const char** argv)
 		err_msg = "registering IPv4 monitoring fd";
 		goto finally;
 	}
+
+	init_access_registry();
 
 	// main loop to serve clients
 	while (!done) {
