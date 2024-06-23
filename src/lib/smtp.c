@@ -60,6 +60,7 @@ Cada estado va a tener un handlers que hay que definir
 #include "states.h"
 
 #include <fcntl.h>
+#include <monitor.h>
 #include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -71,7 +72,6 @@ Cada estado va a tener un handlers que hay que definir
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include <monitor.h>
 
 #define MS_TEXT_SIZE           13
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
@@ -130,8 +130,8 @@ static const struct state_definition states_handlers[] = {
 
 };
 
-process_handler handlers_table[] = { [EHLO] = handle_helo, [FROM] = handle_from, [TO] = handle_to, [DATA] = handle_data,
-	                                 [BODY] = handle_body, [ERROR] = NULL };
+process_handler handlers_table[] = { [EHLO] = handle_helo, [FROM] = handle_from, [TO] = handle_to,
+	                                 [DATA] = handle_data, [BODY] = handle_body, [ERROR] = NULL };
 
 //
 static void read_handler(struct selector_key* key);
@@ -161,7 +161,6 @@ static void
 close_handler(struct selector_key* key)
 {
 	stm_handler_close(&ATTACHMENT(key)->stm, key);
-	smtp_done(key);
 	monitor_close_connection();
 }
 
@@ -179,6 +178,10 @@ get_smtp_handler(void)
 void
 smtp_done(selector_key* key)
 {
+	selector_status status = selector_unregister_fd(key->s, key->fd);
+	if (status != SELECTOR_SUCCESS) {
+		perror("selector_unregister_fd");
+	}
 	smtp_data* data = ATTACHMENT(key);
 	free(data);
 }
@@ -229,6 +232,7 @@ smtp_passive_accept(selector_key* key)
 	}
 
 	monitor_add_connection();
+
 	return;
 }
 
