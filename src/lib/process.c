@@ -134,7 +134,7 @@ handle_to(struct selector_key* key, char* msg)
 		bad_syntax(msg, "RCPT TO:<address>");
 		return TO;
 	}
-	strcpy((char*)data->rcpt_to, mail);
+	strcpy((char*)data->rcpt_to[data->rcpt_qty++], mail);
 
 	ok(msg, OK_RCPT);
 
@@ -169,7 +169,7 @@ handle_data(struct selector_key* key, char* msg)
 
 	if (strcasecmp(verb, RCPT_VERB) == 0) {
 		smtp_state ret = handle_to(key, msg);  // lidio con la no determinacion
-		if (ret == TO) {
+		if (ret == DATA) {
 			return DATA;
 		}
 	}

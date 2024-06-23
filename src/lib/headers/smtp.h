@@ -18,7 +18,7 @@
 #define COMMAND_LINE_SIZE    512
 #define MAIL_SIZE            255
 #define BODY_SIZE            1024
-
+#define MAX_RCPT			 5
 typedef struct smtp_data
 {
 	struct state_machine stm;
@@ -41,7 +41,8 @@ typedef struct smtp_data
 	struct request request;
 
 	uint8_t mail_from[LOCAL_USER_NAME_SIZE + 1 + DOMAIN_NAME_SIZE];
-	uint8_t rcpt_to[LOCAL_USER_NAME_SIZE + 1 + DOMAIN_NAME_SIZE];
+	uint8_t rcpt_to[LOCAL_USER_NAME_SIZE + 1 + DOMAIN_NAME_SIZE][MAX_RCPT];
+	size_t rcpt_qty;
 	uint8_t data[BODY_SIZE];
 
 	// raw buffer

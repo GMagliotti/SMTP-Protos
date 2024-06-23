@@ -210,7 +210,7 @@ smtp_passive_accept(selector_key* key)
 	data->stm.initial = REQUEST_WRITE;
 	data->stm.max_state = REQUEST_ERROR;
 	data->stm.states = states_handlers;
-
+	data->rcpt_qty = 0;
 	buffer_init(&data->read_buffer, N(data->raw_buff_read), data->raw_buff_read);
 	buffer_init(&data->write_buffer, N(data->raw_buff_write), data->raw_buff_write);
 
