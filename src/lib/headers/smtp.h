@@ -1,10 +1,10 @@
 #ifndef SMTP_SERVER_H
 #define SMTP_SERVER_H
 #include "buffer.h"
+#include "states.h"
 #include "request.h"
 #include "selector.h"
 #include "stm.h"
-
 #include <netdb.h>
 #include <stdbool.h>
 #include <string.h>
@@ -16,7 +16,7 @@
 #define LOCAL_USER_NAME_SIZE 64
 #define DOMAIN_NAME_SIZE     255
 #define COMMAND_LINE_SIZE    512
-#define MAIL_SIZE            64
+#define MAIL_SIZE            255
 #define BODY_SIZE            1024
 
 typedef struct smtp_data
@@ -36,7 +36,7 @@ typedef struct smtp_data
 	int output_fd;  // file descriptor for the output file
 
 	// parser
-
+	smtp_state state;
 	struct request_parser request_parser;
 	struct request request;
 
@@ -49,17 +49,18 @@ typedef struct smtp_data
 	uint8_t raw_buff_read[BUFFER_SIZE];
 } smtp_data;
 
-enum smtp_states
+ 
+
+typedef enum 
 {
 
 	REQUEST_READ = 0,
 	REQUEST_WRITE,
 	REQUEST_DATA,
-	DONE,
-	ERROR,
+	REQUEST_DONE,
+	REQUEST_ERROR,
 	// definir los estados de la maquina de estados del protocolo SMTP
-};
-typedef enum smtp_states smtp_states;
+} socket_state;
  
 
 

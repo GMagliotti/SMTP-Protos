@@ -64,3 +64,5 @@ src/mail/*
 
 monitor/client/*
 monitor/*
+# Logs 
+src/log/*

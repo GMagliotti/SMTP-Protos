@@ -23,21 +23,20 @@ typedef enum
 	LOG_WARNING,
 	LOG_ERROR,
 	LOG_FATAL
-} TLogLevel;
+} log_level_t;
 
 #define MIN_LOG_LEVEL LOG_DEBUG
 #define MAX_LOG_LEVEL LOG_FATAL
 
-const char* logger_get_level_string(TLogLevel level);
+const char* logger_get_level_string(log_level_t level);
 
 #ifdef DISABLE_LOGGER
-#define loggerInit(selector, logFile, logStream)
-#define loggerFinalize()
-#define loggerSetLevel(level)
-#define loggerIsEnabledFor(level) 0
+#define logger_init(selector, logFile, logStream)
+#define logger_finalize()
+#define logger_set_level(level)
+#define logger_is_enabled_for(level) 0
 #define logf(level, format, ...)
 #define log(level, s)
-#define logClientAuthenticated(clientId, username, successful)
 #else
 /**
  * @brief Initializes the logging system. Not calling this function will result is the
@@ -60,9 +59,9 @@ int logger_init(fd_selector selector_param, const char* log_file, FILE* log_stre
  */
 int logger_finalize();
 
-void logger_set_level(TLogLevel level);
+void logger_set_level(log_level_t level);
 
-int logger_is_enabled_for(TLogLevel level);
+int logger_is_enabled_for(log_level_t level);
 
 void logger_pre_print();
 

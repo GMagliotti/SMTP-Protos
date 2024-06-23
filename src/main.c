@@ -13,6 +13,7 @@
 #include "lib/headers/monitor.h"
 #include "lib/headers/selector.h"
 #include "lib/headers/smtp.h"
+#include "logger.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -231,6 +232,10 @@ main(const int argc, const char** argv)
 		goto finally;
 	}
 
+	// logger
+	logger_init(selector, "", NULL);
+	logger_set_level(LOG_DEBUG);
+
 	// TODO: check if we need timeout
 	const struct selector_init conf = {
         .signal = SIGALRM,
@@ -277,7 +282,6 @@ main(const int argc, const char** argv)
 		err_msg = "registering IPv4 fd";
 		goto finally;
 	}
-
 	ss = selector_register(selector, monitor_server6, &monitor, OP_READ, NULL);
 	if (ss != SELECTOR_SUCCESS) {
 		err_msg = "registering IPv6 monitoring fd";
@@ -289,6 +293,9 @@ main(const int argc, const char** argv)
 		err_msg = "registering IPv4 monitoring fd";
 		goto finally;
 	}
+	// logger
+	logger_init(selector, "", NULL);
+	logger_set_level(LOG_DEBUG);
 
 	// main loop to serve clients
 	while (!done) {
@@ -333,5 +340,8 @@ finally:
 	if (monitor_server4 >= 0) {
 		close(monitor_server4);
 	}
+
+	logger_finalize();
+
 	return ret;
 }

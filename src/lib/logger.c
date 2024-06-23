@@ -22,12 +22,12 @@
 /** The maximum length a single print into the log buffer SHOULD require. */
 #define LOG_BUFFER_MAX_PRINT_LENGTH 0x200  // 512 bytes
 
-#define LOG_FILE_PERMISSION_BITS   666
-#define LOG_FOLDER_PERMISSION_BITS 666
+#define LOG_FILE_PERMISSION_BITS   (S_IRWXU | S_IRWXO | S_IRWXG)  
+#define LOG_FOLDER_PERMISSION_BITS (S_IRWXU | S_IRWXO | S_IRWXG)
 #define LOG_FILE_OPEN_FLAGS        (O_WRONLY | O_APPEND | O_CREAT | O_NONBLOCK)
 
 const char*
-logger_get_level_string(TLogLevel level)
+logger_get_level_string(log_level_t level)
 {
 	switch (level) {
 		case LOG_DEBUG:
@@ -56,7 +56,7 @@ static size_t buffer_start = 0, buffer_length = 0, buffer_capacity = 0;
 /** The file descriptor for writing logs to disk, or -1 if we're not doing that. */
 static int log_file_fd = -1;
 static fd_selector selector = NULL;
-static TLogLevel log_level = MIN_LOG_LEVEL;
+static log_level_t log_level = MIN_LOG_LEVEL;
 
 /** The stream for writing logs to, or NULL if we're not doing that. */
 static FILE* log_stream = NULL;
@@ -248,13 +248,13 @@ logger_finalize()
 }
 
 void
-logger_set_level(TLogLevel level)
+logger_set_level(log_level_t level)
 {
 	log_level = level;
 }
 
 int
-logger_is_enabled_for(TLogLevel level)
+logger_is_enabled_for(log_level_t level)
 {
 	return level >= log_level && (log_file_fd > 0 || log_stream != NULL);
 }
