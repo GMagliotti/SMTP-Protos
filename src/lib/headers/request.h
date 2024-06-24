@@ -2,6 +2,7 @@
 #define REQUEST_H
 #include "buffer.h"
 #include <stdlib.h>
+#include <fcntl.h>
 
 #define DATA_SIZE 1024
 #define INITIAL_REQUEST_DATA_SIZE 1024
@@ -32,6 +33,7 @@ typedef struct request_parser
 	struct request* request;
 	enum request_state state;
 
+	int* output_fd;
 	/** cuantos bytes tenemos que leer*/
 	unsigned int n;
 	/** cuantos bytes ya leimos */

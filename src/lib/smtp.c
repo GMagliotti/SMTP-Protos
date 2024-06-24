@@ -489,6 +489,7 @@ request_data_init(unsigned int state, struct selector_key* key)
 	// data->request.data = calloc(INITIAL_REQUEST_DATA_SIZE, sizeof(char));
 	// data->request.data_size = INITIAL_REQUEST_DATA_SIZE;
 	data->request_parser.request = &data->request;
+	data->request_parser.output_fd = &data->output_fd;
 	request_parser_data_init(&data->request_parser);
 
 	// We need to create a file in the maildir associated with the client
