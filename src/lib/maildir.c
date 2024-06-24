@@ -1,4 +1,5 @@
 #include "maildir.h"
+#include "smtp.h"
 #define MAIL_DIR_SIZE 4
 #define DOMAIN_NAME_SIZE 255
 #define LOCAL_USER_NAME_SIZE 64
@@ -105,7 +106,13 @@ int get_temp_file_fd(char* email) {
 	return fd;
 }
 
-void copy_temp_to_new(char* email, int temp_file_fd) {
+void copy_temp_to_new(char*** recipients, size_t amount, int temp_file_fd) {
+	for (size_t i = 0; i < amount; i++) {
+		copy_temp_to_new_single((*recipients)[i], temp_file_fd);
+	}
+}
+
+void copy_temp_to_new_single(char* email, int temp_file_fd) {
 		// we copy the mail from mail/<domain>/<user>/tmp/<timestamp> to mail/<domain>/<rcpt_to>/new/<timestamp>
 		// we need to create the new dir if it doesn't exist
 		logf(LOG_DEBUG, "Copying temp file (fd=%d) to new for email %s", temp_file_fd, email);
@@ -179,11 +186,6 @@ void copy_temp_to_new(char* email, int temp_file_fd) {
 
 		if (close(new_fd) != 0) {
 			logf(LOG_ERROR, "Error closing new mail file (fd=%d)", new_fd);
-			perror("close");
-			return;
-		}
-		if (close(temp_file_fd) != 0) {
-			logf(LOG_ERROR, "Error closing temp mail file (fd=%d)", temp_file_fd);
 			perror("close");
 			return;
 		}

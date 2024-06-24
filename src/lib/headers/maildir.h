@@ -38,10 +38,12 @@ char* create_maildir(char* email);
  */
 int get_temp_file_fd();
 
+void copy_temp_to_new_single(char* email, int temp_file_fd);
+
 /**
- * @brief Copy the contents of the temporary file to a new file in the user's maildir. 
- * This new file will be under the path mail/<domain>/<user>/new, named with a timestamp.
- * Both the temporary file and the new file will be closed upon successful completion.
+ * @brief Copy the contents of the temporary file to each recipient's maildir. 
+ * These new files will be under the path mail/<domain>/<recipient>/new, named with a timestamp.
+ * The new files will be closed upon creation, but the temporary file will remain open.
  */
-void copy_temp_to_new(char* email, int temp_file_fd);
+void copy_temp_to_new(char *** recipients, size_t amount, int temp_file_fd);
 #endif

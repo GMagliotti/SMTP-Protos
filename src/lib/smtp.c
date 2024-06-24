@@ -514,7 +514,11 @@ request_data_close(unsigned int state, struct selector_key* key)
 {
 	if (state == REQUEST_DATA) {
 		smtp_data* data = ATTACHMENT(key);
-		copy_temp_to_new((char*)data->rcpt_to, data->output_fd);
+		
+		// qne patch, replace if possible
+		for (size_t i = 0; i < data->rcpt_qty; i++) {
+			copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd);
+		}
 
 		clean_request(key);
 
@@ -549,6 +553,7 @@ static inline void
 clean_request(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
+	close(data->output_fd);
 	// free(data->request.data); // freeing the data buffer
 	memset(&data->request, 0, sizeof((data->request)));
 	memset(&data->mail_from, 0, sizeof((data->mail_from)));
