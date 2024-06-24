@@ -58,6 +58,7 @@ Cada estado va a tener un handlers que hay que definir
 #include "request.h"
 #include "selector.h"
 #include "states.h"
+#include "logger.h"
 
 #include <fcntl.h>
 #include <monitor.h>
@@ -98,9 +99,10 @@ void on_done_init(const unsigned state, struct selector_key* key);
 
 void smtp_done(selector_key* key);
 bool read_complete(enum request_state st);
+static inline void clean_request(struct selector_key* key);
 
-int create_directory_if_not_exists(char* maildir);
-static char* get_and_create_maildir(char* mail_from);
+//int create_directory_if_not_exists(char* maildir);
+//static char* get_and_create_maildir(char* mail_from);
 static const struct state_definition states_handlers[] = {
 	// definir los estados de la maquina de estados del protocolo SMTP
 	// no necesariamente tenemos que llenar todos los campos en cada estado
@@ -202,6 +204,7 @@ smtp_done(selector_key* key)
 void
 smtp_passive_accept(selector_key* key)
 {
+	log(LOG_DEBUG, "Accepted new connection");
 	// Crear un nuevo socket
 
 	// this struct may hold ipv4 or ipv6
@@ -212,6 +215,7 @@ smtp_passive_accept(selector_key* key)
 	int new_socket = accept(key->fd, (struct sockaddr*)&client_addr, &client_addr_len);
 
 	if (new_socket < 0) {
+		log(LOG_ERROR, "Error opening connection accepting socket");
 		perror("accept");
 		return;
 	}
@@ -219,6 +223,7 @@ smtp_passive_accept(selector_key* key)
 	smtp_data* data = calloc(1, sizeof(*data));
 
 	if (data == NULL) {
+		log(LOG_ERROR, "Error allocating memory for smtp data struct");
 		perror("calloc");
 		return;
 	}
@@ -473,9 +478,13 @@ request_data_handler(struct selector_key* key)
 void
 request_data_init(unsigned int state, struct selector_key* key)
 {
+	logf(LOG_DEBUG, "Request data initiated, currently in state: %d", state);
 	printf("request_data_init\n %d", state);
 
 	smtp_data* data = ATTACHMENT(key);
+	// TODO check for NULL!
+	//data->request.data = calloc(INITIAL_REQUEST_DATA_SIZE, sizeof(char));
+	//data->request.data_size = INITIAL_REQUEST_DATA_SIZE;
 	data->request_parser.request = &data->request;
 	request_parser_data_init(&data->request_parser);
 
@@ -484,36 +493,13 @@ request_data_init(unsigned int state, struct selector_key* key)
 	// My server doesn't work as a relay server, so we just need to create a file in the maildir associated with the
 	// client
 
-	// TODO: esto a una funcion
-	char* maildir = get_and_create_maildir((char*)data->mail_from);
-	if (maildir == NULL) {
-		perror("get_and_create_maildir");
-		return;
-	}
-
-	// now we create tmp dir within maildir
-	char full_dir[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = { 0 };
-	snprintf(full_dir, sizeof(full_dir), "%s/tmp", maildir);
-	if (create_directory_if_not_exists(full_dir) == -1) {
-		perror("create_directory_if_not_exists");
-		return;
-	}
-
-	char filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
-	              MS_TEXT_SIZE] = { 0 };
-	time_t ms = time(NULL);
-	// filename like mail/<domain>/<user>/tmp/<timestamp>
-	snprintf(filename, sizeof(filename), "%s/tmp/%ld", maildir, ms);
-
-	int fd = open(filename, O_CREAT | O_RDWR, 0777);
+	int fd = get_temp_file_fd((char*)data->mail_from);
 	if (fd < 0) {
-		perror("open");
+		log(LOG_ERROR, "Error getting temp file fd");
+		perror("get_temp_file_fd");
 		return;
 	}
-
-	free(maildir);
-
-	data->output_fd = fd;
+	data->output_fd = get_temp_file_fd((char*)data->mail_from);
 
 	// We will write periodically to this file. Every time the buffer in the parser is full, we will write to the
 	// file Also, we will write if we find a \r\n.\r\n in the buffer
@@ -524,84 +510,11 @@ request_data_close(unsigned int state, struct selector_key* key)
 {
 	if (state == REQUEST_DATA) {
 		smtp_data* data = ATTACHMENT(key);
-		// we copy the mail from mail/<domain>/<user>/tmp/<timestamp> to mail/<domain>/<rcpt_to>/new/<timestamp>
-		// we need to create the new dir if it doesn't exist
+		copy_temp_to_new((char*)data->rcpt_to, data->output_fd);
 
-		char* maildir = get_and_create_maildir((char*)data->rcpt_to);
-		if (maildir == NULL) {
-			perror("get_and_create_maildir");
-			return;
-		}
-
-		// now we create new dir within maildir
-		char full_dir[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE] = {
-			0
-		};
-		snprintf(full_dir, sizeof(full_dir), "%s/new", maildir);
-		if (create_directory_if_not_exists(full_dir) == -1) {
-			perror("create_directory_if_not_exists");
-			return;
-		}
-
-		free(maildir);
-
-		char filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
-		              MS_TEXT_SIZE] = { 0 };
-
-		time_t ms = time(NULL);
-		snprintf(filename, sizeof(filename), "%s/%ld", full_dir, ms);
-
-		int new_fd = open(filename, O_CREAT | O_WRONLY, 0777);
-		if (new_fd < 0) {
-			perror("open");
-			return;
-		}
-
-		// we need to copy the file from the tmp dir to the new dir
-		// we need to read the file from the tmp dir
-
-		char* domain = strchr((char*)data->rcpt_to, '@') + 1;
-		char local_user[LOCAL_USER_NAME_SIZE] = { 0 };
-
-		char tmp_filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE +
-		                  1 + MS_TEXT_SIZE] = { 0 };
-		snprintf(tmp_filename, sizeof(tmp_filename), "mail/%s/%s/tmp/%ld", domain, local_user, ms);
-
-		// the fd from tmp file is in data->output_fd
-
-		// we need to read from the tmp file and write to the new file
-
-		int tmp_fd = data->output_fd;
-
-		char buffer[1024] = { 0 };
-
-		ssize_t bytes_read = 0;
-		lseek(tmp_fd, 0, SEEK_SET);  // we need to go to the beginning of the file because we have already written to it
-
-		// This while loop is provisional. We need to read the whole file and apply the transformation if there is any
-		// The reason for doing it as a while loop is because we haven't implemented transformations yet
-
-		while ((bytes_read = read(tmp_fd, buffer, sizeof(buffer))) > 0) {
-			ssize_t bytes_written = write(new_fd, buffer, bytes_read);
-			if (bytes_written < 0) {
-				perror("write");
-				return;
-			}
-		}
-
-		if (bytes_read < 0) {
-			perror("read");
-			return;
-		}
-
-		// we close the new file
-
-		close(new_fd);
-
-		// we close the tmp file
+		clean_request(key);
 
 		request_close(&data->request_parser);
-		close(data->output_fd);  // close the file
 	}
 }
 
@@ -619,64 +532,6 @@ strndup(const char* s, size_t n)
 	return p;
 }
 
-int
-create_directory_if_not_exists(char* maildir)
-{
-	// maildir tiene la forma mail/<domain>/<user>
-	// i should check if the maildir exists, if not, create it
-	struct stat st = { 0 };
-	if (stat(maildir, &st) == -1) {
-		if (mkdir(maildir, 0777) == -1) {  // if I want anyone to read, write or execute then i should use 0777
-			perror("mkdir");
-			return -1;
-		}
-	}
-	return 0;
-}
-
-static char*
-get_and_create_maildir(char* mail_from)
-{
-	int maildir_size = MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE;
-	char* maildir = malloc(maildir_size);  // Consider dynamic sizing based on mail_from length
-	if (maildir == NULL) {
-		perror("malloc");
-		return NULL;
-	}
-	char* domain = strchr(mail_from, '@');
-	if (domain == NULL) {
-		free(maildir);
-		perror("strchr");
-		return NULL;
-	}
-	domain++;
-	char local_user[LOCAL_USER_NAME_SIZE] = { 0 };
-	strncpy(local_user, mail_from, domain - mail_from - 1);
-	snprintf(maildir, maildir_size, "mail/%s/%s", domain, local_user);
-
-	// Create mail if it doesn't exist
-	if (create_directory_if_not_exists("mail") == -1) {
-		free(maildir);
-		return NULL;
-	}
-
-	// Create mail/<domain> if it doesn't exist
-	char domain_dir[100] = { 0 };
-	snprintf(domain_dir, sizeof(domain_dir), "mail/%s", domain);
-	if (create_directory_if_not_exists(domain_dir) == -1) {
-		free(maildir);
-		return NULL;
-	}
-
-	// Create mail/<domain>/<user> if it doesn't exist
-	if (create_directory_if_not_exists(maildir) == -1) {
-		free(maildir);
-		return NULL;
-	}
-
-	return maildir;
-}
-
 void
 on_done_init(const unsigned state, struct selector_key* key)
 {
@@ -684,4 +539,16 @@ on_done_init(const unsigned state, struct selector_key* key)
 	smtp_data* data = ATTACHMENT(key);
 	free(data);
 	// anything else to free?
+}
+
+static inline void
+clean_request(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+	//free(data->request.data); // freeing the data buffer
+	memset(&data->request, 0, sizeof((data->request)));
+	memset(&data->mail_from, 0, sizeof((data->mail_from)));
+	memset(&data->data, 0, sizeof((data->data)));
+	memset(&data->rcpt_to, 0, sizeof((data->rcpt_to)));
+	memset(&data->rcpt_qty, 0, sizeof((data->rcpt_qty)));
 }

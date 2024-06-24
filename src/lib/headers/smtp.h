@@ -5,6 +5,7 @@
 #include "request.h"
 #include "selector.h"
 #include "stm.h"
+#include "maildir.h"
 #include <netdb.h>
 #include <stdbool.h>
 #include <string.h>

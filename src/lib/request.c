@@ -18,10 +18,9 @@ request_parser_init(struct request_parser* p)
 {
 	p->i = 0;
 	p->state = request_verb;
+	//free(p->request->data);
 	memset(p->request, 0, sizeof(*(p->request)));
 }
-
-
 
 extern enum request_state
 request_consume(buffer* b, struct request_parser* p, bool* errored)
@@ -37,6 +36,7 @@ request_consume(buffer* b, struct request_parser* p, bool* errored)
 	}
 	return st;
 }
+
 
 
 extern enum request_state

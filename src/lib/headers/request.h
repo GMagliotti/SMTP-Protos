@@ -1,8 +1,11 @@
 #ifndef REQUEST_H
 #define REQUEST_H
 #include "buffer.h"
+#include <stdlib.h>
 
 #define DATA_SIZE 1024
+#define INITIAL_REQUEST_DATA_SIZE 1024
+#define MAX_REQUEST_DATA_SIZE 1048576
 enum request_state
 {
 	request_verb,
@@ -20,6 +23,8 @@ struct request
 	char verb[16];
 	char arg[256];
 	char data[DATA_SIZE];
+	//char* data;
+	//unsigned int data_size;
 };
 
 typedef struct request_parser

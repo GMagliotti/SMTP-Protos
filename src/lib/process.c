@@ -22,7 +22,7 @@ static void welcome(char* buf);
 static void ok_data(char* buf);
 static void ok_body(char* buf);
 static bool is_valid(char* verb, char* state_verb, char* msg);
-static void clean_request(struct selector_key* key);
+// static void clean_request(struct selector_key* key);
 static void auth_msg(char* buf);
 
 static const char* valid_commands[] = { HELO_VERB,  EHLO_VERB,  MAIL_VERB, RCPT_VERB, DATA_VERB,
@@ -178,10 +178,6 @@ handle_body(struct selector_key* key, char* msg)
 	ok_body(msg);
 	strcpy((char*)body, data->request.data);
 
-	// mandar el mail
-
-	clean_request(key);
-
 	data->state = EHLO;
 	return EHLO;
 }
@@ -314,15 +310,15 @@ bad_pwd(char* buf)
 	sprintf(buf, "[CODE] Incorrect Password! \n");
 }
 
-static void
-clean_request(struct selector_key* key)
-{
-	smtp_data* data = ATTACHMENT(key);
-	memset(&data->request, 0, sizeof((data->request)));
-	memset(&data->mail_from, 0, sizeof((data->mail_from)));
-	memset(&data->data, 0, sizeof((data->data)));
-	memset(&data->rcpt_to, 0, sizeof((data->rcpt_to)));
-}
+// static void
+// clean_request(struct selector_key* key)
+// {
+// 	smtp_data* data = ATTACHMENT(key);
+// 	memset(&data->request, 0, sizeof((data->request)));
+// 	memset(&data->mail_from, 0, sizeof((data->mail_from)));
+// 	memset(&data->data, 0, sizeof((data->data)));
+// 	memset(&data->rcpt_to, 0, sizeof((data->rcpt_to)));
+// }
 
 static void
 bad_sequence(char* buf)
