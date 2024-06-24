@@ -44,7 +44,7 @@
 
 CFLAGS:= -std=c11 -pedantic  -pedantic-errors -pthread -g -Wall  -Wextra -D_POSIX_C_SOURCE=200809L -Werror -fsanitize=address   -Ilib/headers -Itest/headers
 SMTPD_CLI:= smtpd.elf
-LIB_OBJS:= build/args.o build/netutils.o build/parser.o build/stm.o build/selector.o build/buffer.o build/smtp.o build/request.o build/logger.o build/process.o build/monitor.o build/access_registry.o
+LIB_OBJS:= build/args.o build/netutils.o build/parser.o build/stm.o build/selector.o build/buffer.o build/smtp.o build/request.o build/request_admin.o build/request_data.o build/logger.o build/process.o build/monitor.o build/access_registry.o
 MAIN_OBJ:= build/main.o
 TEST_OBJS:= build/parser_test.o
 TEST_EXE:= test_runner

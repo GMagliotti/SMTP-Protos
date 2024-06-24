@@ -14,6 +14,11 @@
 #define DATA_VERB   "DATA"
 #define RSET_VERB   "RSET"
 #define NOOP_VERB   "NOOP"
+#define XAUTH_VERB  "XAUTH"
+#define XFROM_VERB  "XFROM"
+#define XGET_VERB   "XGET"
+#define XGET_ALL    "ALL"
+#define XQUIT_VERB  "XQUIT"
 #define FROM_PREFIX "FROM:"
 #define TO_PREFIX   "TO:"
 
@@ -28,15 +33,10 @@ smtp_state handle_body(struct selector_key* key, char* msg);
 smtp_state handle_data(struct selector_key* key, char* msg);
 bool handle_reset(struct selector_key* key, char* msg);
 bool handle_noop(struct selector_key* key, char* msg);
+bool handle_xquit(struct selector_key* key, char* msg);
 
-// enum process_state {
-// 	request_helo,
-// 	request_from,
-// 	request_to,
-// 	request_data,
-// 	request_body,
-// 	request_done,
-// 	request_error,
-// };
+smtp_state handle_xauth(struct selector_key* key, char* msg);
+smtp_state handle_xfrom(struct selector_key* key, char* msg);
+smtp_state handle_xget(struct selector_key* key, char* msg);
 
 #endif

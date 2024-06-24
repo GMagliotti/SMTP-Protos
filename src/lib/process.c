@@ -1,8 +1,11 @@
 
 #include "process.h"
 
+#include "access_registry.h"
 #include "smtp.h"
 #include "states.h"
+
+#include <time.h>
 
 #define NUM_COMMANDS (sizeof(valid_commands) / sizeof(valid_commands[0]))
 #define OK_RCPT      "2.1.0"
@@ -13,16 +16,17 @@ static bool extract_email(char* arg, char* email, size_t email_len);
 static void bad_sequence(char* buf);
 static void bad_command(char* buf);
 static void bad_syntax(char* buf, char* syntax);
+static void bad_pwd(char* buf);
 static void ok(char* buf, char* code);
 static void welcome(char* buf);
 static void ok_data(char* buf);
 static void ok_body(char* buf);
 static bool is_valid(char* verb, char* state_verb, char* msg);
 static void clean_request(struct selector_key* key);
+static void auth_msg(char* buf);
 
-static const char* valid_commands[] = {
-	HELO_VERB, EHLO_VERB, MAIL_VERB, RCPT_VERB, DATA_VERB,
-};
+static const char* valid_commands[] = { HELO_VERB,  EHLO_VERB,  MAIL_VERB, RCPT_VERB, DATA_VERB,
+	                                    XFROM_VERB, XAUTH_VERB, XGET_VERB, XQUIT_VERB };
 
 bool
 handle_reset(struct selector_key* key, char* msg)
@@ -30,7 +34,7 @@ handle_reset(struct selector_key* key, char* msg)
 	smtp_data* data = ATTACHMENT(key);
 	char* verb = data->request.verb;
 	if (strcasecmp(verb, RSET_VERB) != 0) {
-		return false;		
+		return false;
 	}
 	char* arg = data->request.arg;
 	if (arg != NULL && *arg != '\0') {
@@ -55,6 +59,21 @@ handle_noop(struct selector_key* key, char* msg)
 	return true;
 }
 
+bool
+handle_xquit(struct selector_key* key, char* msg)
+{
+	smtp_data* data = ATTACHMENT(key);
+	char* verb = data->request.verb;
+
+	if (strcasecmp(verb, XQUIT_VERB) == 0 && (data->state == XFROM || data->state == XGET)) {
+		ok(msg, "XQUIT!");
+		data->state = FROM;
+		return true;
+	}
+
+	return false;
+}
+
 smtp_state
 handle_helo(struct selector_key* key, char* msg)
 {
@@ -77,11 +96,16 @@ handle_helo(struct selector_key* key, char* msg)
 
 	return FROM;
 }
+
 smtp_state
 handle_from(struct selector_key* key, char* msg)
 {
 	smtp_data* data = ATTACHMENT(key);
 	char* verb = data->request.verb;
+
+	if (strcasecmp(verb, XAUTH_VERB) == 0) {
+		return handle_xauth(key, msg);  // lidio con la no determinacion
+	}
 
 	if (!is_valid(verb, MAIL_VERB, msg)) {
 		return FROM;
@@ -110,6 +134,7 @@ handle_from(struct selector_key* key, char* msg)
 
 	return TO;
 }
+
 smtp_state
 handle_to(struct selector_key* key, char* msg)
 {
@@ -182,6 +207,111 @@ handle_data(struct selector_key* key, char* msg)
 	ok_data(msg);
 
 	return BODY;
+}
+
+smtp_state
+handle_xauth(struct selector_key* key, char* msg)
+{
+	smtp_data* data = ATTACHMENT(key);
+	char* verb = data->request.verb;
+
+	if (!is_valid(verb, XAUTH_VERB, msg)) {
+		return FROM;
+	}
+
+	char* arg = data->request.arg;
+
+	if (!authenticate(arg)) {
+		bad_pwd(msg);
+		return FROM;
+	}
+
+	auth_msg(msg);
+
+	return XFROM;
+}
+smtp_state
+handle_xfrom(struct selector_key* key, char* msg)
+{
+	/*
+	    Dispuse que este comando tiene un argumento:
+
+	    * Un USER válido
+
+
+	*/
+	smtp_data* data = ATTACHMENT(key);
+	char* verb = data->request.verb;
+
+	if (!is_valid(verb, XFROM_VERB, msg)) {
+		return XFROM;
+	}
+
+	char* arg = data->request.arg;
+
+	if (!is_user(arg)) {
+		return FROM;
+	}
+
+	strcpy((char*)data->user, arg);
+
+	ok(msg, "XFROM!");
+
+	return XGET;
+}
+smtp_state
+handle_xget(struct selector_key* key, char* msg)
+{
+	/*
+	    Dispuse que este comando tiene dos argumentos posibles:
+
+	    * ALL
+	    * una fecha en formato dd/mm/yyyy
+
+
+	*/
+
+	smtp_data* data = ATTACHMENT(key);
+	char* verb = data->request.verb;
+
+	if (!is_valid(verb, XGET_VERB, msg)) {
+		return XGET;
+	}
+
+	char* arg = data->request.arg;
+
+	time_t time;
+	if (strcasecmp(arg, XGET_ALL) == 0) {
+		// ver que ponemos en el request
+		print_mails(data->fd, (char*)data->user);
+
+	} else if (convert_and_validate_date(arg, &time)) {
+		// ver que ponemos en el request
+		print_mails_by_day(data->fd, time);
+
+	} else {
+		bad_syntax(msg, "XGET <date> | XGET ALL");
+		return XGET;
+	}
+
+	// realizar el
+	memset(&data->user, 0, sizeof(data->user));
+
+	ok(msg, "XGET!");
+
+	return XFROM;
+}
+
+static void
+auth_msg(char* buf)
+{
+	sprintf(buf, "ADMIN authenticated! \n");
+}
+
+static void
+bad_pwd(char* buf)
+{
+	sprintf(buf, "[CODE] Incorrect Password! \n");
 }
 
 static void

@@ -81,16 +81,21 @@ typedef enum request_state (*state_handler)(const uint8_t c, struct request_pars
 const fd_handler* get_smtp_handler(void);
 
 unsigned int request_read_handler(struct selector_key* key);
-// unsigned int request_data_handler(struct selector_key* key);
-// unsigned int request_done_handler(struct selector_key* key);
-unsigned int request_write_handler(struct selector_key* key);
-unsigned int request_process(struct selector_key* key);
-unsigned int request_data_handler(struct selector_key* key);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
+unsigned int request_write_handler(struct selector_key* key);
+
+unsigned int request_process(struct selector_key* key);
+
+unsigned int request_data_handler(struct selector_key* key);
 void request_data_init(unsigned int state, struct selector_key* key);
 void request_data_close(unsigned int state, struct selector_key* key);
+
+unsigned int request_admin_handler(struct selector_key* key);
+void request_admin_init(unsigned int state, struct selector_key* key);
+void request_admin_close(unsigned int state, struct selector_key* key);
 void on_done_init(const unsigned state, struct selector_key* key);
+
 void smtp_done(selector_key* key);
 bool read_complete(enum request_state st);
 
@@ -119,6 +124,13 @@ static const struct state_definition states_handlers[] = {
 
 	},
 	{
+	    .state = REQUEST_ADMIN,
+	    .on_read_ready = request_admin_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
+	    .on_arrival = request_admin_init,        // setteamos el parser. Abrimos el FD al archivo de salida.
+	    .on_departure = request_admin_close,     // cerramos el parser
+
+	},
+	{
 	    .state = REQUEST_DONE,
 	    .on_write_ready = NULL,
 
@@ -130,8 +142,10 @@ static const struct state_definition states_handlers[] = {
 
 };
 
-process_handler handlers_table[] = { [EHLO] = handle_helo, [FROM] = handle_from, [TO] = handle_to,
-	                                 [DATA] = handle_data, [BODY] = handle_body, [ERROR] = NULL };
+process_handler handlers_table[] = {
+	[EHLO] = handle_helo, [FROM] = handle_from,  [TO] = handle_to,      [DATA] = handle_data, [BODY] = handle_body,
+	[ERROR] = NULL,       [XAUTH] = handle_body, [XFROM] = handle_body, [XGET] = handle_body
+};
 
 static void read_handler(struct selector_key* key);
 static void write_handler(struct selector_key* key);
@@ -168,6 +182,7 @@ static fd_handler smtp_handler = {
 	.handle_write = write_handler,
 	.handle_close = close_handler,
 };
+
 const fd_handler*
 get_smtp_handler(void)
 {
@@ -236,6 +251,46 @@ smtp_passive_accept(selector_key* key)
 }
 
 // REQUEST WRITE HANDLERS
+
+socket_state
+request_process(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+	// WRAPPER de los state process habdlers
+
+	char msg[60];
+	smtp_state st = data->state;
+
+	if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_WRITE)) {
+		return REQUEST_ERROR;
+	}
+	size_t count;
+
+	uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+
+	// LLAMAR A HANDLERS NO SECUENCIALES
+	bool is_noop = handle_noop(key, msg);
+	bool is_rset = handle_reset(key, msg);
+	bool is_xquit = handle_xquit(key, msg);
+
+
+
+	// LLAMAR AL SECUENCIAL
+	if (!(is_noop || is_rset || is_xquit)) {
+		process_handler fn = handlers_table[st];
+		smtp_state next = fn(key, msg);
+		data->state = next;
+	}
+
+	size_t len = strlen(msg);
+	msg[len++] = '\0';
+	memcpy(ptr, msg, len);
+	buffer_write_adv(&data->write_buffer, len);
+
+	return REQUEST_WRITE;
+}
+
+// REQUEST WRITE HANDLERS
 socket_state
 request_write_handler(struct selector_key* key)
 {
@@ -260,6 +315,11 @@ request_write_handler(struct selector_key* key)
 					return REQUEST_DATA;
 				}
 			}
+			if(data->state >= XAUTH && data->state <= XQUIT){
+				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
+					return REQUEST_ADMIN;
+				}
+			}
 			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
 				return REQUEST_READ;
 			} else {
@@ -272,6 +332,7 @@ request_write_handler(struct selector_key* key)
 	return ret;
 }
 
+//  REQUEST READ HANDLERS
 void
 request_read_init(unsigned int state, struct selector_key* key)
 {
@@ -281,7 +342,6 @@ request_read_init(unsigned int state, struct selector_key* key)
 	request_parser_init(&data->request_parser);
 }
 
-// REQUEST READ HANDLERS
 socket_state
 request_read_handler(struct selector_key* key)
 {
@@ -309,44 +369,64 @@ request_read_handler(struct selector_key* key)
 	return ret;
 }
 
-socket_state
-request_process(struct selector_key* key)
+void
+request_read_close(unsigned int state, struct selector_key* key)
+{
+	if (state == REQUEST_READ) {
+		smtp_data* data = ATTACHMENT(key);
+		request_close(&data->request_parser);
+	}
+}
+
+//  REQUEST ADMIN HANDLERS
+
+unsigned int
+request_admin_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
-	// WRAPPER de los state process habdlers
+	size_t count;
+	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
+	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
 
-	char msg[60];
-	smtp_state st = data->state;
+	socket_state ret = REQUEST_DATA;
 
-	if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_WRITE)) {
+	if (recv_bytes <= 0) {
 		return REQUEST_ERROR;
 	}
-	size_t count;
 
-	uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
+	buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
+	// procesamiento
+	bool error = false;
 
-	// LLAMAR A HANDLERS NO SECUENCIALES
-	bool is_noop = handle_noop(key, msg);
-	bool is_rset = handle_reset(key, msg);
+	enum request_state state = request_consume_admin(&data->read_buffer, &data->request_parser, &error);
 
-	// LLAMAR AL SECUENCIAL
-	if (!(is_noop || is_rset)) {
-		process_handler fn = handlers_table[st];
-		smtp_state next = fn(key, msg);
-		data->state = next;
+	if (request_is_done(state, 0)) {
+		ret = request_process(key);
 	}
 
-	size_t len = strlen(msg);
-	msg[len++] = '\0';
-	memcpy(ptr, msg, len);
-	buffer_write_adv(&data->write_buffer, len);
-
-
-	return REQUEST_WRITE;
+	return ret;
 }
-// unsigned int request_done_handler(struct selector_key* key){
 
-// }
+void
+request_admin_init(unsigned int state, struct selector_key* key)
+{
+	printf("request_data_init\n %d", state);
+
+	smtp_data* data = ATTACHMENT(key);
+	data->request_parser.request = &data->request;
+	request_parser_admin_init(&data->request_parser);
+}
+
+//  REQUEST DATA HANDLERS
+
+void
+request_admin_close(unsigned int state, struct selector_key* key)
+{
+	if (state == REQUEST_ADMIN) {
+		smtp_data* data = ATTACHMENT(key);
+		request_close(&data->request_parser);
+	}
+}
 
 unsigned int
 request_data_handler(struct selector_key* key)
@@ -390,15 +470,6 @@ request_data_handler(struct selector_key* key)
 	*/
 	return ret;
 }
-void
-request_read_close(unsigned int state, struct selector_key* key)
-{
-	if (state == REQUEST_READ) {
-		smtp_data* data = ATTACHMENT(key);
-		request_close(&data->request_parser);
-	}
-}
-
 void
 request_data_init(unsigned int state, struct selector_key* key)
 {

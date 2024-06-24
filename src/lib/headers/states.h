@@ -9,6 +9,10 @@ typedef enum
 	DATA,
 	BODY,
 	DONE,
+	XAUTH,
+	XFROM,
+	XGET,
+	XQUIT,
 	ERROR,
 	// definir los estados de la maquina de estados del protocolo SMTP
 } smtp_state;
