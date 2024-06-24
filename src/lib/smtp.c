@@ -54,11 +54,11 @@ Cada estado va a tener un handlers que hay que definir
 #include "smtp.h"
 
 #include "buffer.h"
+#include "logger.h"
 #include "process.h"
 #include "request.h"
 #include "selector.h"
 #include "states.h"
-#include "logger.h"
 
 #include <fcntl.h>
 #include <monitor.h>
@@ -101,8 +101,8 @@ void smtp_done(selector_key* key);
 bool read_complete(enum request_state st);
 static inline void clean_request(struct selector_key* key);
 
-//int create_directory_if_not_exists(char* maildir);
-//static char* get_and_create_maildir(char* mail_from);
+// int create_directory_if_not_exists(char* maildir);
+// static char* get_and_create_maildir(char* mail_from);
 static const struct state_definition states_handlers[] = {
 	// definir los estados de la maquina de estados del protocolo SMTP
 	// no necesariamente tenemos que llenar todos los campos en cada estado
@@ -145,8 +145,8 @@ static const struct state_definition states_handlers[] = {
 };
 
 process_handler handlers_table[] = {
-	[EHLO] = handle_helo, [FROM] = handle_from,  [TO] = handle_to,      [DATA] = handle_data, [BODY] = handle_body,
-	[ERROR] = NULL,       [XAUTH] = handle_xauth, [XFROM] = handle_xfrom, [XGET] =handle_xget
+	[EHLO] = handle_helo, [FROM] = handle_from,   [TO] = handle_to,       [DATA] = handle_data, [BODY] = handle_body,
+	[ERROR] = NULL,       [XAUTH] = handle_xauth, [XFROM] = handle_xfrom, [XGET] = handle_xget
 };
 
 static void read_handler(struct selector_key* key);
@@ -278,8 +278,6 @@ request_process(struct selector_key* key)
 	bool is_rset = handle_reset(key, msg);
 	bool is_xquit = handle_xquit(key, msg);
 
-
-
 	// LLAMAR AL SECUENCIAL
 	if (!(is_noop || is_rset || is_xquit)) {
 		process_handler fn = handlers_table[st];
@@ -320,7 +318,7 @@ request_write_handler(struct selector_key* key)
 					return REQUEST_DATA;
 				}
 			}
-			if(data->state >= XAUTH && data->state <= XQUIT){
+			if (data->state >= XAUTH && data->state <= XQUIT) {
 				if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
 					return REQUEST_ADMIN;
 				}
@@ -365,10 +363,12 @@ request_read_handler(struct selector_key* key)
 	// procesamiento
 	bool error = false;
 
-	enum request_state next_state = request_consume(&data->read_buffer, &data->request_parser, &error);
-
-	if (request_is_done(next_state, &error)) {
+	enum request_state state = request_consume(&data->read_buffer, &data->request_parser, &error);
+	if (request_is_done(state, 0)) {
 		ret = request_process(key);
+	}
+	if (state == request_error) {
+		buffer_reset(&data->read_buffer);
 	}
 
 	return ret;
@@ -393,7 +393,7 @@ request_admin_handler(struct selector_key* key)
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
 
-	socket_state ret = REQUEST_DATA;
+	socket_state ret = REQUEST_ADMIN;
 
 	if (recv_bytes <= 0) {
 		return REQUEST_ERROR;
@@ -404,11 +404,12 @@ request_admin_handler(struct selector_key* key)
 	bool error = false;
 
 	enum request_state state = request_consume_admin(&data->read_buffer, &data->request_parser, &error);
-
 	if (request_is_done(state, 0)) {
 		ret = request_process(key);
 	}
-
+	if (state == request_error) {
+		buffer_reset(&data->read_buffer);
+	}
 	return ret;
 }
 
@@ -483,8 +484,8 @@ request_data_init(unsigned int state, struct selector_key* key)
 
 	smtp_data* data = ATTACHMENT(key);
 	// TODO check for NULL!
-	//data->request.data = calloc(INITIAL_REQUEST_DATA_SIZE, sizeof(char));
-	//data->request.data_size = INITIAL_REQUEST_DATA_SIZE;
+	// data->request.data = calloc(INITIAL_REQUEST_DATA_SIZE, sizeof(char));
+	// data->request.data_size = INITIAL_REQUEST_DATA_SIZE;
 	data->request_parser.request = &data->request;
 	request_parser_data_init(&data->request_parser);
 
@@ -545,7 +546,7 @@ static inline void
 clean_request(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
-	//free(data->request.data); // freeing the data buffer
+	// free(data->request.data); // freeing the data buffer
 	memset(&data->request, 0, sizeof((data->request)));
 	memset(&data->mail_from, 0, sizeof((data->mail_from)));
 	memset(&data->data, 0, sizeof((data->data)));

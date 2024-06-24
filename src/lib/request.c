@@ -28,11 +28,11 @@ request_consume(buffer* b, struct request_parser* p, bool* errored)
 	enum request_state st = p->state;
 
 	while (buffer_can_read(b)) {
-		const uint8_t c = buffer_read(b);
-		st = request_parser_feed(p, c);
 		if (request_is_done(st, errored)) {
 			break;
 		}
+		const uint8_t c = buffer_read(b);
+		st = request_parser_feed(p, c);
 	}
 	return st;
 }
@@ -61,6 +61,7 @@ request_parser_feed(struct request_parser* p, const uint8_t c)
 			}
 			break;
 		case request_error:
+		
 			next = p->state;
 			break;
 		default:

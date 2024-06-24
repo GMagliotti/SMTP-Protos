@@ -1,10 +1,11 @@
 #include "request.h"
+
 #include <arpa/inet.h>
 #include <string.h>
 #include <strings.h>
+#define XQUIT_VERB "XQUIT"
 enum request_state command(const uint8_t c, struct request_parser* p);
 enum request_state command_arg(const uint8_t c, struct request_parser* p);
-
 
 extern void
 request_parser_admin_init(struct request_parser* p)
@@ -38,9 +39,9 @@ request_parser_admin_feed(struct request_parser* p, const uint8_t c)
 		case request_verb:
 			next = command(c, p);
 			break;
-        case request_arg:
-            next = command_arg(c,p);
-            break;
+		case request_arg:
+			next = command_arg(c, p);
+			break;
 		case request_cr:
 
 			if (c == '\n') {
@@ -67,9 +68,19 @@ command(const uint8_t c, struct request_parser* p)
 	enum request_state next;
 	switch (c) {
 		case ' ':
-            p->request->verb[p->i] = '\0';
+			p->request->verb[p->i] = '\0';
 			p->i = 0;
 			return request_arg;
+			break;
+		case '\r':
+			if (strncasecmp(p->request->verb, XQUIT_VERB, strlen(XQUIT_VERB)) == 0 ){
+				p->request->verb[p->i] = '\0';
+				p->i = 0;
+				return request_cr;
+				
+			} else {
+				return request_error;
+			}
 			break;
 		default:
 			break;
@@ -81,7 +92,6 @@ command(const uint8_t c, struct request_parser* p)
 	}
 	return next;
 }
-
 
 enum request_state
 command_arg(const uint8_t c, struct request_parser* p)

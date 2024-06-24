@@ -22,6 +22,7 @@ static void welcome(char* buf);
 static void ok_data(char* buf);
 static void ok_body(char* buf);
 static bool is_valid(char* verb, char* state_verb, char* msg);
+static void bad_user(char* buf);
 // static void clean_request(struct selector_key* key);
 static void auth_msg(char* buf);
 
@@ -216,7 +217,10 @@ handle_xauth(struct selector_key* key, char* msg)
 	}
 
 	char* arg = data->request.arg;
-
+	if (arg == NULL || *arg == '\0') {
+		bad_syntax(msg, "AUTH <password>");
+		return true;
+	}
 	if (!authenticate(arg)) {
 		bad_pwd(msg);
 		return FROM;
@@ -245,9 +249,10 @@ handle_xfrom(struct selector_key* key, char* msg)
 
 	char* arg = data->request.arg;
 
-	if (!is_user(arg)) {
-		return XFROM;
-	}
+	// if (!is_user(arg)) {
+	bad_user(msg);
+	// return XFROM;
+	// }
 
 	strcpy((char*)data->user, arg);
 
@@ -270,6 +275,10 @@ handle_xget(struct selector_key* key, char* msg)
 	smtp_data* data = ATTACHMENT(key);
 	char* verb = data->request.verb;
 
+	if (strcasecmp(verb, XFROM_VERB) == 0) {
+		return handle_xfrom(key, msg);  // lidio con la no determinacion
+	}
+
 	if (!is_valid(verb, XGET_VERB, msg)) {
 		return XGET;
 	}
@@ -277,13 +286,16 @@ handle_xget(struct selector_key* key, char* msg)
 	char* arg = data->request.arg;
 
 	time_t time;
+
 	if (strcasecmp(arg, XGET_ALL) == 0) {
+		sprintf(msg, "XGET ALL");
 		// ver que ponemos en el request
-		print_mails(data->fd, (char*)data->user);
+		// print_mails(data->fd, (char*)data->user);
 
 	} else if (convert_and_validate_date(arg, &time)) {
+		sprintf(msg, "XGET %s", arg);
 		// ver que ponemos en el request
-		print_mails_by_day(data->fd, time);
+		// print_mails_by_day(data->fd, time);
 
 	} else {
 		bad_syntax(msg, "XGET <date> | XGET ALL");
@@ -324,6 +336,11 @@ static void
 bad_sequence(char* buf)
 {
 	sprintf(buf, "503 5.5.1 Error: Bad Command Sequence \n");
+}
+static void
+bad_user(char* buf)
+{
+	sprintf(buf, "XFROM: Bad User \n");
 }
 
 static void
