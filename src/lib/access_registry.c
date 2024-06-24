@@ -7,6 +7,10 @@
 #include <time.h>
 #include <unistd.h>
 #define SUPER_SECRET_PASSWORD "password"
+#define MOCKGIC_NUMBER 10
+#define MOCK_DAY_EPOCHUNIX 1687404600
+#define MOCK_MAILS_PER_USER 20
+#define RAND_MAX_DISTANCE 10000000
 
 
 static bool is_user_present(const char* user);
@@ -48,6 +52,29 @@ typedef struct access_registry_t
 } access_registry_t;
 
 access_registry_t* access_registry;
+
+void mock() {
+	srand(time(NULL));
+	char* names[MOCKGIC_NUMBER] = {
+		"Mateo@loremipsum.com",
+		"Juan@loremipsum.com",
+		"Francisco@loremipsum.com",
+		"Franco@loremipsum.com",
+		"Marcelo@loremipsum.com",
+		"Ariel@loremipsum.com",
+		"Juliana@loremipsum.com",
+		"Lucia@loremipsum.com",
+		"Maria@loremipsum.com",
+		"Josefina@loremipsum.com"
+	};
+
+	for (int i = 0; i < MOCKGIC_NUMBER; i++) {
+		for (int j = 0; j < MOCK_MAILS_PER_USER; j++ ) {
+			register_mail(names[i], names[rand() % MOCKGIC_NUMBER], "/path/to/email", MOCK_DAY_EPOCHUNIX + rand() % RAND_MAX_DISTANCE);
+		}
+	}
+	
+}
 
 void
 init_access_registry()
