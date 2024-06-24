@@ -146,7 +146,7 @@ static const struct state_definition states_handlers[] = {
 
 process_handler handlers_table[] = {
 	[EHLO] = handle_helo, [FROM] = handle_from,  [TO] = handle_to,      [DATA] = handle_data, [BODY] = handle_body,
-	[ERROR] = NULL,       [XAUTH] = handle_body, [XFROM] = handle_body, [XGET] = handle_body
+	[ERROR] = NULL,       [XAUTH] = handle_xauth, [XFROM] = handle_xfrom, [XGET] =handle_xget
 };
 
 static void read_handler(struct selector_key* key);

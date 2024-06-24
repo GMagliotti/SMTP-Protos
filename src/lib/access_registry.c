@@ -55,9 +55,8 @@ init_access_registry()
 	access_registry = (access_registry_t*)calloc(1, sizeof(access_registry_t));
 	access_registry->mails_count = 0;
 
-
 	// llamar al mock
-	
+
 }
 
 void

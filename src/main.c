@@ -331,6 +331,8 @@ finally:
 	}
 	selector_close();
 
+	free_access_registry();
+
 	if (server6 >= 0) {
 		close(server6);
 	}

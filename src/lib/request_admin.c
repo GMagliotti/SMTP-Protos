@@ -21,7 +21,7 @@ request_consume_admin(buffer* b, struct request_parser* p, bool* errored)
 
 	while (buffer_can_read(b)) {
 		const uint8_t c = buffer_read(b);
-		st = request_parser_data_feed(p, c);
+		st = request_parser_admin_feed(p, c);
 		if (request_is_done(st, errored)) {
 			break;
 		}
@@ -68,15 +68,16 @@ command(const uint8_t c, struct request_parser* p)
 	switch (c) {
 		case ' ':
             p->request->verb[p->i] = '\0';
-			return request_cr;
+			p->i = 0;
+			return request_arg;
 			break;
 		default:
 			break;
 	}
 
-	if (p->i < sizeof(p->request->data) - 1) {
-		p->request->data[p->i++] = (char)c;
-		next = request_body;
+	if (p->i < sizeof(p->request->verb) - 1) {
+		p->request->verb[p->i++] = (char)c;
+		next = request_verb;
 	}
 	return next;
 }

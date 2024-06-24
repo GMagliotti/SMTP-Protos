@@ -246,7 +246,7 @@ handle_xfrom(struct selector_key* key, char* msg)
 	char* arg = data->request.arg;
 
 	if (!is_user(arg)) {
-		return FROM;
+		return XFROM;
 	}
 
 	strcpy((char*)data->user, arg);
