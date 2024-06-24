@@ -78,6 +78,8 @@ Cada estado va a tener un handlers que hay que definir
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
 #define MAIL_DIR_SIZE          4
 
+
+
 typedef enum request_state (*state_handler)(const uint8_t c, struct request_parser* p);
 const fd_handler* get_smtp_handler(void);
 
@@ -263,7 +265,7 @@ request_process(struct selector_key* key)
 	smtp_data* data = ATTACHMENT(key);
 	// WRAPPER de los state process habdlers
 
-	char msg[60];
+	char msg[RESPONSE_SIZE];
 	smtp_state st = data->state;
 
 	if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_WRITE)) {

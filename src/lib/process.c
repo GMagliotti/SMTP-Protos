@@ -249,10 +249,10 @@ handle_xfrom(struct selector_key* key, char* msg)
 
 	char* arg = data->request.arg;
 
-	// if (!is_user(arg)) {
-	bad_user(msg);
-	// return XFROM;
-	// }
+	if (!is_user(arg)) {
+		bad_user(msg);
+		return XFROM;
+	}
 
 	strcpy((char*)data->user, arg);
 
@@ -288,14 +288,12 @@ handle_xget(struct selector_key* key, char* msg)
 	time_t time;
 
 	if (strcasecmp(arg, XGET_ALL) == 0) {
-		sprintf(msg, "XGET ALL");
 		// ver que ponemos en el request
-		// print_mails(data->fd, (char*)data->user);
+		print_mails(msg, RESPONSE_SIZE, (char*)data->user);
 
 	} else if (convert_and_validate_date(arg, &time)) {
-		sprintf(msg, "XGET %s", arg);
 		// ver que ponemos en el request
-		// print_mails_by_day(data->fd, time);
+		print_mails_by_day(msg, RESPONSE_SIZE, time);
 
 	} else {
 		bad_syntax(msg, "XGET <date> | XGET ALL");
@@ -305,9 +303,8 @@ handle_xget(struct selector_key* key, char* msg)
 	// realizar el
 	memset(&data->user, 0, sizeof(data->user));
 
-	ok(msg, "XGET!");
 
-	return XFROM;
+	return XGET;
 }
 
 static void

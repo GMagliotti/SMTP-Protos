@@ -20,6 +20,8 @@
 #define MAIL_SIZE            255
 #define BODY_SIZE            1024
 #define MAX_RCPT			 101
+#define RESPONSE_SIZE  1024
+
 typedef struct smtp_data
 {
 	struct state_machine stm;
