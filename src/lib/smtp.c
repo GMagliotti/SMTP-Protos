@@ -53,6 +53,7 @@ Cada estado va a tener un handlers que hay que definir
 
 #include "smtp.h"
 
+#include "access_registry.h"
 #include "buffer.h"
 #include "logger.h"
 #include "process.h"
@@ -86,6 +87,8 @@ const fd_handler* get_smtp_handler(void);
 unsigned int request_read_handler(struct selector_key* key);
 void request_read_init(unsigned int state, struct selector_key* key);
 void request_read_close(unsigned int state, struct selector_key* key);
+static socket_state request_actual_read(struct selector_key* key);
+
 unsigned int request_write_handler(struct selector_key* key);
 
 unsigned int request_process(struct selector_key* key);
@@ -99,53 +102,47 @@ void request_admin_init(unsigned int state, struct selector_key* key);
 void request_admin_close(unsigned int state, struct selector_key* key);
 void on_done_init(const unsigned state, struct selector_key* key);
 
+unsigned int write_file_handler(struct selector_key* key);
+void init_status(char* program);
 bool read_complete(enum request_state st);
 static inline void clean_request(struct selector_key* key);
 
-static socket_state request_read_posta(struct selector_key* key);
-
-
 typedef enum request_state (*consume_handler)(buffer* b, struct request_parser* p, bool* errored);
 
+static const struct state_definition states_handlers[] = { {
+	                                                           .state = REQUEST_READ,
+	                                                           .on_read_ready = request_read_handler,
+	                                                           .on_arrival = request_read_init,
+	                                                           .on_departure = request_read_close,
+	                                                       },
+	                                                       {
+	                                                           .state = REQUEST_WRITE,
+	                                                           .on_write_ready = request_write_handler,
+	                                                       },
+	                                                       {
+	                                                           .state = REQUEST_DATA,
+	                                                           .on_read_ready = request_read_handler,
+	                                                           .on_arrival = request_data_init,
+	                                                           .on_departure = request_data_close,
+	                                                       },
+	                                                       {
+	                                                           .state = REQUEST_ADMIN,
+	                                                           .on_read_ready = request_read_handler,
+	                                                           .on_arrival = request_admin_init,
+	                                                           .on_departure = request_admin_close,
+	                                                       },
+	                                                       {
+	                                                           .state = REQUEST_DATA_WRITE,
+	                                                           .on_write_ready = write_file_handler,
 
-// int create_directory_if_not_exists(char* maildir);
-// static char* get_and_create_maildir(char* mail_from);
-static const struct state_definition states_handlers[] = {
-	// definir los estados de la maquina de estados del protocolo SMTP
-	// no necesariamente tenemos que llenar todos los campos en cada estado
+	                                                       },
 
-	{
-	    .state = REQUEST_READ,
-	    .on_read_ready = request_read_handler,
-	    .on_arrival = request_read_init,
-	    .on_departure = request_read_close,
-	},
-
-	{
-	    .state = REQUEST_WRITE,
-	    .on_write_ready = request_write_handler,
-	},
-	{
-	    .state = REQUEST_DATA,
-	    .on_read_ready = request_read_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
-	    .on_arrival = request_data_init,        // setteamos el parser. Abrimos el FD al archivo de salida.
-	    .on_departure = request_data_close,     // cerramos el parser
-
-	},
-	{
-	    .state = REQUEST_ADMIN,
-	    .on_read_ready = request_read_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
-	    .on_arrival = request_admin_init,        // setteamos el parser. Abrimos el FD al archivo de salida.
-	    .on_departure = request_admin_close,     // cerramos el parser
-
-	},
-	{
-		.state = REQUEST_DONE,
-	},
-	{
-		.state = REQUEST_ERROR,
-			
-	}
+	                                                       {
+	                                                           .state = REQUEST_DONE,
+	                                                       },
+	                                                       {
+	                                                           .state = REQUEST_ERROR,
+	                                                       }
 
 };
 
@@ -154,15 +151,26 @@ process_handler handlers_table[] = {
 	[ERROR] = NULL,       [XAUTH] = handle_xauth, [XFROM] = handle_xfrom, [XGET] = handle_xget
 };
 
-consume_handler consumers_table[] = {
-	[REQUEST_READ] = request_consume, [REQUEST_ADMIN] = request_consume_admin, [REQUEST_DATA] = request_consume_data
-};
+consume_handler consumers_table[] = { [REQUEST_READ] = request_consume,
+	                                  [REQUEST_ADMIN] = request_consume_admin,
+	                                  [REQUEST_DATA] = request_consume_data };
+
+struct status config = { 0 };
 
 static void read_handler(struct selector_key* key);
 static void write_handler(struct selector_key* key);
 static void close_handler(struct selector_key* key);
+static void write_file(struct selector_key* key);
 
 // BASICAMENTE LLAMAN A LOS HANDLERS DE LA MAQUINA DE ESTADOS
+
+void
+init_status(char* program)
+{
+	config.program = program;
+	config.transform = program != NULL ? true : false;
+}
+
 static void
 read_handler(struct selector_key* key)
 {
@@ -172,11 +180,7 @@ read_handler(struct selector_key* key)
 		smtp_done(key);
 	}
 }
-// static void
-// smtp_destroy(struct smtp_data* state)
-// {
-// 	free(state);
-// }
+
 static void
 write_handler(struct selector_key* key)
 {
@@ -197,13 +201,24 @@ close_handler(struct selector_key* key)
 {
 	stm_handler_close(&ATTACHMENT(key)->stm, key);
 	monitor_close_connection();
-	// smtp_destroy(ATTACHMENT(key));
+}
+
+static void
+write_file(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+	stm_handler_write(&data->stm, key);
 }
 
 static fd_handler smtp_handler = {
 	.handle_read = read_handler,
 	.handle_write = write_handler,
 	.handle_close = close_handler,
+};
+static fd_handler file_handler = {
+	.handle_read = NULL,
+	.handle_write = write_file,
+	.handle_close = NULL,
 };
 
 const fd_handler*
@@ -299,13 +314,12 @@ request_process(struct selector_key* key)
 	bool is_quit = handle_quit(key, msg);
 	bool is_rset = handle_reset(key, msg);
 	bool is_xquit = handle_xquit(key, msg);
-	if (is_quit)
-	{
+	if (is_quit) {
 		return REQUEST_DONE;
 	}
-	
+
 	// LLAMAR AL SECUENCIAL
-	if (!(is_noop || is_rset || is_xquit )) {
+	if (!(is_noop || is_rset || is_xquit)) {
 		process_handler fn = handlers_table[st];
 		smtp_state next = fn(key, msg);
 		data->state = next;
@@ -352,13 +366,13 @@ request_write_handler(struct selector_key* key)
 			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
 				return REQUEST_READ;
 			} else {
-				ret = ERROR;
+				ret = REQUEST_ERROR;
 			}
 		}
 	} else {
 		perror("Send effed");
 		log(LOG_FATAL, "Send error in write handler");
-		ret = ERROR;
+		ret = REQUEST_ERROR;
 	}
 	return ret;
 }
@@ -367,14 +381,14 @@ request_write_handler(struct selector_key* key)
 void
 request_read_init(unsigned int state, struct selector_key* key)
 {
-	printf("request_read_init\n %d", state);
+	logf(LOG_DEBUG, "Request read initiated, currently in state: %d", state);
 	smtp_data* data = ATTACHMENT(key);
 	data->request_parser.request = &data->request;
 	request_parser_init(&data->request_parser);
 }
 
 static socket_state
-request_read_posta(struct selector_key* key)
+request_actual_read(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
 	socket_state ret = data->stm.current->state;
@@ -385,18 +399,29 @@ request_read_posta(struct selector_key* key)
 
 	enum request_state state = consumer(&data->read_buffer, &data->request_parser, &error);
 
-	if (request_is_done(state, 0)) {
-		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
-			// Procesamiento
-			
-			ret = request_process(key);
+	if (data->stm.current->state == REQUEST_DATA) {
+		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_NOOP)) {
+			if (SELECTOR_SUCCESS == selector_set_interest(key->s, data->output_fd, OP_WRITE)) {
+				strcpy((char*)data->data, (char*)data->request_parser.request->data);
+				ret = REQUEST_DATA_WRITE;
+			} else
+				ret = REQUEST_ERROR;
 		} else {
 			ret = REQUEST_ERROR;
 		}
 	}
-	// if (state == request_error) {
-	// 	buffer_reset(&data->read_buffer);
-	// }
+
+	else {
+		if (request_is_done(state, 0)) {
+			if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+				// Procesamiento
+				ret = request_process(key);
+			} else {
+				ret = REQUEST_ERROR;
+			}
+		}
+	}
+
 	return ret;
 }
 
@@ -406,13 +431,12 @@ request_read_handler(struct selector_key* key)
 	smtp_data* data = ATTACHMENT(key);
 
 	if (buffer_can_read(&data->read_buffer)) {
-		return request_read_posta(key);
+		return request_actual_read(key);
 	}
 
 	size_t count;
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
-
 
 	if (recv_bytes <= 0) {
 		return REQUEST_ERROR;
@@ -420,7 +444,7 @@ request_read_handler(struct selector_key* key)
 
 	buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
 
-	return request_read_posta(key);
+	return request_actual_read(key);
 }
 
 void
@@ -465,8 +489,7 @@ request_admin_handler(struct selector_key* key)
 void
 request_admin_init(unsigned int state, struct selector_key* key)
 {
-	printf("request_data_init\n %d", state);
-
+	logf(LOG_DEBUG, "Request admin initiated, currently in state: %d", state);
 	smtp_data* data = ATTACHMENT(key);
 	data->request_parser.request = &data->request;
 	request_parser_admin_init(&data->request_parser);
@@ -506,36 +529,80 @@ request_data_handler(struct selector_key* key)
 	if (request_is_done(state, 0)) {
 		ret = request_process(key);
 	}
-	
+
 	return ret;
 }
 void
 request_data_init(unsigned int state, struct selector_key* key)
 {
 	logf(LOG_DEBUG, "Request data initiated, currently in state: %d", state);
-	printf("request_data_init\n %d", state);
-
 	smtp_data* data = ATTACHMENT(key);
-	// TODO check for NULL!
-	// data->request.data = calloc(INITIAL_REQUEST_DATA_SIZE, sizeof(char));
-	// data->request.data_size = INITIAL_REQUEST_DATA_SIZE;
 	data->request_parser.request = &data->request;
 	data->request_parser.output_fd = &data->output_fd;
 	request_parser_data_init(&data->request_parser);
 
-	// We need to create a file in the maildir associated with the client
-	// For doing so, we need to get the maildir associated with the client
-	// My server doesn't work as a relay server, so we just need to create a file in the maildir associated with the
-	// client
+	//  for each recipient open a file
 
-	// MARK
-	int fd = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
-	if (fd < 0) {
-		log(LOG_ERROR, "Error getting temp file fd");
-		perror("get_temp_file_fd");
-		return;
+	for (size_t i = 0; i < data->rcpt_qty; i++) {
+		// construir el maildir
+
+		int file = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
+
+		char to_send[50] = "From ";  // Esto no se pq es
+		strcat(to_send, (char*)data->mail_from);
+		// concat_date(to_send);
+
+		write(file, to_send, strlen(to_send));
+
+		if (config.transform) {
+			int pipe_fd[2];
+
+			int ret = pipe(pipe_fd);
+			if (ret != 0) {
+				perror("Error while creating pipe");
+				exit(EXIT_FAILURE);
+			}
+
+			int pid = fork();
+			if (pid < 0) {
+				perror("Error while creating slave");
+				exit(EXIT_FAILURE);
+			}
+
+			if (pid == 0) {
+				// Redirect stdin and stdout to pipes
+				close(STDIN_FILENO);
+				dup(pipe_fd[0]);  // read end of where app writes
+				close(STDOUT_FILENO);
+				dup(file);  // write end of where app reads
+
+				close(pipe_fd[0]);
+				close(pipe_fd[1]);
+				close(file);
+
+				execlp(config.program, config.program, (char*)NULL);
+				perror("Error while creating slave");
+				exit(EXIT_FAILURE);
+			}
+
+			// Father
+			close(pipe_fd[0]);
+			close(file);
+			data->output_fd = pipe_fd[1];
+		} else {
+			data->output_fd = file;
+		}
+
+		selector_register(key->s, data->output_fd, &file_handler, OP_NOOP, data);
 	}
-	data->output_fd = fd;
+
+	// int fd = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
+	// if (fd < 0) {
+	// 	log(LOG_ERROR, "Error getting temp file fd");
+	// 	perror("get_temp_file_fd");
+	// 	return;
+	// }
+	// data->output_fd = fd;
 
 	// We will write periodically to this file. Every time the buffer in the parser is full, we will write to the
 	// file Also, we will write if we find a \r\n.\r\n in the buffer
@@ -547,17 +614,68 @@ request_data_close(unsigned int state, struct selector_key* key)
 	if (state == REQUEST_DATA) {
 		smtp_data* data = ATTACHMENT(key);
 
-		// qne patch, replace if possible
-		for (size_t i = 0; i < data->rcpt_qty; i++) {
-			copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd, data->filename_fd);
-		}
+		// // qne patch, replace if possible
+		// for (size_t i = 0; i < data->rcpt_qty; i++) {
+		// 	copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd, data->filename_fd);
+		// }
 
-		clean_request(key);
 
 		request_close(&data->request_parser);
 	}
 }
 
+socket_state
+write_file_handler(struct selector_key* key)
+{
+	socket_state ret = REQUEST_DATA_WRITE;
+	smtp_data* data = ATTACHMENT(key);
+
+	char* data_buffer = (char*)data->data;
+	size_t count = strlen(data_buffer);
+	ssize_t n = write(data->output_fd, data_buffer, count);
+
+	if (n < 0) {
+		return REQUEST_ERROR;
+	}
+
+	if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_NOOP)) {
+		return REQUEST_ERROR;
+	}
+
+	if (data->request_parser.state == request_done) {
+		if (SELECTOR_SUCCESS != selector_set_interest(key->s, data->fd, OP_WRITE)) {
+			return REQUEST_ERROR;
+		}
+
+		for (size_t i = 0; i < data->rcpt_qty; i++) {
+			copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd, data->filename_fd);
+			time_t now = time(NULL);
+			register_mail((char*)data->mail_from, (char*)data->rcpt_to[i], data->filename_fd, now);
+		}
+
+		close(data->output_fd);
+
+		// rename  rcpt file
+
+		if (SELECTOR_SUCCESS != selector_unregister_fd(key->s, data->output_fd))
+			return REQUEST_ERROR;
+
+		data->output_fd = 0;
+		clean_request(key);
+
+
+		// Procesamiento
+		return request_process(key);
+
+		// escribo mi rta
+	} else {
+		if (SELECTOR_SUCCESS != selector_set_interest(key->s, data->fd, OP_READ))
+			return REQUEST_ERROR;
+		else
+			ret = REQUEST_DATA;
+	}
+	return ret;
+}
 char*
 strndup(const char* s, size_t n)
 {
@@ -589,7 +707,6 @@ clean_request(struct selector_key* key)
 	// free(data->request.data); // freeing the data buffer
 	memset(&data->request, 0, sizeof((data->request)));
 	memset(&data->mail_from, 0, sizeof((data->mail_from)));
-	memset(&data->data, 0, sizeof((data->data)));
 	memset(&data->rcpt_to, 0, sizeof((data->rcpt_to)));
 	memset(&data->rcpt_qty, 0, sizeof((data->rcpt_qty)));
 }

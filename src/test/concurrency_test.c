@@ -47,7 +47,7 @@ void *send_email(void *threadid) {
     buffer[n] = '\0'; // Null-terminate the received string
     // random sleep
     
-    //sleep(rand() % 1);
+    sleep(rand() % 4);
 
     // Construct the email message in a single buffer
     const char *email_message = 
@@ -72,6 +72,7 @@ void *send_email(void *threadid) {
     // random sleep
 
     //sleep(rand() % 1);
+    sleep(rand() % 4);
 
 
     while( (n = recv(sockfd, buffer, sizeof(buffer) - 1, 0)) > 0) {

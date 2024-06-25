@@ -2,6 +2,7 @@
 #include "process.h"
 
 #include "access_registry.h"
+#include "maildir.h"
 #include "smtp.h"
 #include "states.h"
 
@@ -63,7 +64,6 @@ handle_quit(struct selector_key* key, char* msg)
 	}
 	ok(msg, OK_RSET);
 	data->state = FROM;
-
 
 	return true;
 }
@@ -222,6 +222,10 @@ handle_data(struct selector_key* key, char* msg)
 	}
 	ok_data(msg);
 
+	
+
+	// acá vamos a querer crear un socke
+
 	return BODY;
 }
 
@@ -378,7 +382,10 @@ ok(char* buf, char* code)
 static void
 welcome(char* buf)
 {
-	sprintf(buf, "250 EHLO recieved\n"); // \n250-PIPELINING\n250-SIZE\n10240000\n250-VRFY\n250-ETRN\n250-STARTTLS\n250-ENHANCEDSTATUSCODES\n250-8BITMIME\n250-DSN\n250-SMTPUTF8\n250 CHUNKING\n
+	sprintf(
+	    buf,
+	    "250 EHLO recieved\n");  // \n250-PIPELINING\n250-SIZE\n10240000\n250-VRFY\n250-ETRN\n250-STARTTLS\n250-ENHANCEDSTATUSCODES\n250-8BITMIME\n250-DSN\n250-SMTPUTF8\n250
+	                             // CHUNKING\n
 }
 
 static void
