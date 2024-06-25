@@ -12,6 +12,7 @@
 #define OK_MAIL      "2.1.0"
 #define OK_RSET      "2.0.0"
 #define OK_NOOP      "2.0.0"
+#define OK_NOOP      "2.0.0"
 static bool extract_email(char* arg, char* email, size_t email_len);
 static void bad_sequence(char* buf);
 static void bad_command(char* buf);
@@ -47,7 +48,25 @@ handle_reset(struct selector_key* key, char* msg)
 	data->state = FROM;
 	return true;
 }
+bool
+handle_quit(struct selector_key* key, char* msg)
+{
+	smtp_data* data = ATTACHMENT(key);
+	char* verb = data->request.verb;
+	if (strcasecmp(verb, QUIT_VERB) != 0) {
+		return false;
+	}
+	char* arg = data->request.arg;
+	if (arg != NULL && *arg != '\0') {
+		bad_syntax(msg, "QUIT");
+		return true;
+	}
+	ok(msg, OK_RSET);
+	data->state = FROM;
 
+
+	return true;
+}
 bool
 handle_noop(struct selector_key* key, char* msg)
 {

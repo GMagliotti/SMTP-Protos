@@ -11,6 +11,7 @@
 #define EHLO_VERB   "EHLO"
 #define MAIL_VERB   "MAIL"
 #define RCPT_VERB   "RCPT"
+#define QUIT_VERB   "QUIT"
 #define DATA_VERB   "DATA"
 #define RSET_VERB   "RSET"
 #define NOOP_VERB   "NOOP"
@@ -33,6 +34,7 @@ smtp_state handle_body(struct selector_key* key, char* msg);
 smtp_state handle_data(struct selector_key* key, char* msg);
 bool handle_reset(struct selector_key* key, char* msg);
 bool handle_noop(struct selector_key* key, char* msg);
+bool handle_quit(struct selector_key* key, char* msg);
 bool handle_xquit(struct selector_key* key, char* msg);
 
 smtp_state handle_xauth(struct selector_key* key, char* msg);

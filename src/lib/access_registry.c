@@ -155,7 +155,9 @@ register_mail(char* from, char* to, char* path, time_t time)
 }
 
 void free_access_registry() {
-	
+	if (access_registry == NULL) {
+        return;
+    }
     mail_entry_t* current_mail = access_registry->first_by_name;
     mail_entry_t* next_mail = NULL;
     while (current_mail != NULL) {

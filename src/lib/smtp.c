@@ -99,7 +99,6 @@ void request_admin_init(unsigned int state, struct selector_key* key);
 void request_admin_close(unsigned int state, struct selector_key* key);
 void on_done_init(const unsigned state, struct selector_key* key);
 
-void smtp_done(selector_key* key);
 bool read_complete(enum request_state st);
 static inline void clean_request(struct selector_key* key);
 
@@ -141,13 +140,11 @@ static const struct state_definition states_handlers[] = {
 
 	},
 	{
-	    .state = REQUEST_DONE,
-	    .on_write_ready = NULL,
-
+		.state = REQUEST_DONE,
 	},
 	{
-	    .state = REQUEST_ERROR,
-	    .on_write_ready = NULL,
+		.state = REQUEST_ERROR,
+			
 	}
 
 };
@@ -299,11 +296,16 @@ request_process(struct selector_key* key)
 
 	// LLAMAR A HANDLERS NO SECUENCIALES
 	bool is_noop = handle_noop(key, msg);
+	bool is_quit = handle_quit(key, msg);
 	bool is_rset = handle_reset(key, msg);
 	bool is_xquit = handle_xquit(key, msg);
-
+	if (is_quit)
+	{
+		return REQUEST_DONE;
+	}
+	
 	// LLAMAR AL SECUENCIAL
-	if (!(is_noop || is_rset || is_xquit)) {
+	if (!(is_noop || is_rset || is_xquit )) {
 		process_handler fn = handlers_table[st];
 		smtp_state next = fn(key, msg);
 		data->state = next;

@@ -73,8 +73,8 @@ typedef enum
 } socket_state;
  
 
+void smtp_done(selector_key* key);
 
 void smtp_passive_accept(selector_key* key);
-void destroy_socket(selector_key* data);
 
 #endif
