@@ -20,26 +20,25 @@ print_bytes_recieved(uint8_t* buffer, int command)
 	uint64_t bytes = 0;
 	switch (command) {
 		case HIST_C:
-			// qty need to be filled with buffer[6] to buffer[9]
-			for (int i = 0; i < 4; i++) {
-				qty |= (uint32_t)buffer[6 + i] << (8 * i);
-			}
-			qty = ntohl(qty);
-			printf("Historical connections: %u\n", qty);
-			return;
-		case CONC_C:
-			for (int i = 0; i < 4; i++) {
-				qty |= (uint32_t)buffer[6 + i] << (8 * i);
-			}
-			qty = ntohl(qty);
-			printf("Simultaneous connections: %u\n", qty);
-			return;
-		case BYTES_T:
-			for (int i = 0; i < 8; i++) {
-				bytes |= (uint64_t)buffer[6 + i] << (8 * i);
-			}
-			printf("Transfered bytes: %lu\n", bytes);
-			return;
+            for (int i = 0; i < 4; i++) {
+                qty |= (uint32_t)buffer[6 + i] << (8 * (3 - i)); // Ajuste para el orden correcto
+            }
+            qty = ntohl(qty);
+            printf("Historical connections: %u\n", qty);
+            return;
+        case CONC_C:
+            for (int i = 0; i < 4; i++) {
+                qty |= (uint32_t)buffer[6 + i] << (8 * (3 - i)); // Ajuste para el orden correcto
+            }
+            qty = ntohl(qty);
+            printf("Simultaneous connections: %u\n", qty);
+            return;
+        case BYTES_T:
+            for (int i = 0; i < 8; i++) {
+                bytes |= (uint64_t)buffer[6 + i] << (8 * (7 - i)); // Ajuste para el orden correcto
+            }
+            printf("Transferred bytes: %lu\n", bytes);
+            return;
 		case TRANS_S:
 			// it is a boolean, 0x00 is off, 0x01 is on
 			if (buffer[6] == 0x00)

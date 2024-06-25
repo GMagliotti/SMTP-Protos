@@ -59,7 +59,7 @@ test: $(TEST_OBJS)
 	$(CC) $(CFLAGS) $(LIB_OBJS) $(TEST_OBJS) -o $(TEST_EXE)
 
 clean:
-	- rm -rf $(SMTPD_CLI) build/*.o test_runner
+	- rm -rf $(SMTPD_CLI) build/*.o 
 
 build/%.o: lib/%.c
 	mkdir -p build

@@ -7,10 +7,10 @@
 #include <time.h>
 #include <unistd.h>
 #define SUPER_SECRET_PASSWORD "password"
-#define MOCKGIC_NUMBER 10
-#define MOCK_DAY_EPOCHUNIX 1687404600
-#define MOCK_MAILS_PER_USER 20
-#define RAND_MAX_DISTANCE 10000000
+#define MOCKGIC_NUMBER        10
+#define MOCK_DAY_EPOCHUNIX    1687404600
+#define MOCK_MAILS_PER_USER   20
+#define RAND_MAX_DISTANCE     10000000
 
 static bool is_user_present(const char* user);
 void add_user(const char* user);
@@ -52,26 +52,30 @@ typedef struct access_registry_t
 
 access_registry_t* access_registry;
 
+void
+generate_mock_emails()
+{
+	const char* mock_domains[] = { "mateo", "lucas", "harry" };
+	const int domains_count = sizeof(mock_domains) / sizeof(mock_domains[0]);
+	char from[50], to[50], path[200];
+	time_t now = time(NULL);
 
-void generate_mock_emails() {
-    const char* mock_domains[] = {"mateo", "lucas", "harry"};
-    const int domains_count = sizeof(mock_domains) / sizeof(mock_domains[0]);
-    char from[50], to[50], path[200];
-    time_t now = time(NULL);
+	srand((unsigned)time(NULL));  // Seed the random number generator
 
-    srand((unsigned)time(NULL)); // Seed the random number generator
+	for (int i = 0; i < 50; ++i) {
+		// Generate random email addresses
+		snprintf(from, sizeof(from), "%s", mock_domains[rand() % domains_count]);
+		snprintf(to, sizeof(to), "%s", mock_domains[rand() % domains_count]);
 
-    for (int i = 0; i < 50; ++i) {
-        // Generate random email addresses
-        snprintf(from, sizeof(from), "%s", mock_domains[rand() % domains_count]);
-        snprintf(to, sizeof(to), "%s", mock_domains[rand() % domains_count]);
+		// Generate a mock path for the email content
+		snprintf(path, sizeof(path), "/var/mail/%s_to_%s_%d.eml", from, to, i);
 
-        // Generate a mock path for the email content
-        snprintf(path, sizeof(path), "/var/mail/%s_to_%s_%d.eml", from, to, i);
-
-        // Register the mock email
-        register_mail(strdup(from), strdup(to), strdup(path), now - (rand() % 86400 * 2)); // Randomize the time within the last 30 days
-    }
+		// Register the mock email
+		register_mail(strdup(from),
+		              strdup(to),
+		              strdup(path),
+		              now - (rand() % 86400 * 2));  // Randomize the time within the last 30 days
+	}
 }
 // =======
 // void mock() {
@@ -91,10 +95,11 @@ void generate_mock_emails() {
 
 // 	for (int i = 0; i < MOCKGIC_NUMBER; i++) {
 // 		for (int j = 0; j < MOCK_MAILS_PER_USER; j++ ) {
-// 			register_mail(names[i], names[rand() % MOCKGIC_NUMBER], "/path/to/email", MOCK_DAY_EPOCHUNIX + rand() % RAND_MAX_DISTANCE);
+// 			register_mail(names[i], names[rand() % MOCKGIC_NUMBER], "/path/to/email", MOCK_DAY_EPOCHUNIX + rand() %
+// RAND_MAX_DISTANCE);
 // 		}
 // 	}
-	
+
 // >>>>>>> 245e15a84609d1a9368929a348f15a6b5e953f12
 
 void
@@ -103,8 +108,6 @@ init_access_registry()
 	access_registry = (access_registry_t*)calloc(1, sizeof(access_registry_t));
 	access_registry->mails_count = 0;
 	generate_mock_emails();
-
-
 
 	// llamar al mock
 }
@@ -151,26 +154,28 @@ register_mail(char* from, char* to, char* path, time_t time)
 	access_registry->mails_count++;
 }
 
-void
-free_access_registry()
-{
-	mail_entry_t* current = access_registry->first_by_name;
-	mail_entry_t* next = NULL;
-	while (current != NULL) {
-		next = current->next_by_name;
-		free(current);
-		current = next;
-	}
+void free_access_registry() {
+    mail_entry_t* current_mail = access_registry->first_by_name;
+    mail_entry_t* next_mail = NULL;
+    while (current_mail != NULL) {
+        next_mail = current_mail->next_by_name;
+        free(current_mail->from); // Free the from string
+        free(current_mail->to);   // Free the to string
+        free(current_mail->path); // Free the path string
+        free(current_mail);       // Free the mail_entry_t object itself
+        current_mail = next_mail;
+    }
 
-	user_entry_t* current_user = access_registry->users;
-	user_entry_t* next_user = NULL;
-	while (current_user != NULL) {
-		next_user = current_user->next;
-		free(current_user->user);
-		free(current_user);
-		current_user = next_user;
-	}
-	free(access_registry);
+    user_entry_t* current_user = access_registry->users;
+    user_entry_t* next_user = NULL;
+    while (current_user != NULL) {
+        next_user = current_user->next;
+        free(current_user->user); // Free the user string
+        free(current_user);       // Free the user_entry_t object itself
+        current_user = next_user;
+    }
+
+    free(access_registry); // Finally, free the access_registry object itself
 }
 void
 print_access_registry(char* buf, int buf_size)
@@ -202,6 +207,21 @@ print_mails(char* buf, int buf_size, char* user)
 
 	while (current != NULL) {
 		if (strcmp(current->from, user) == 0) {
+			// Calculate the required buffer size for the next entry
+			int required_len = snprintf(NULL,
+			                            0,
+			                            "From: %s\nTo: %s\nPath: %s\nTime: %ld\n\n",
+			                            current->from,
+			                            current->to,
+			                            current->path,
+			                            current->time);
+
+			// Check if adding this entry would exceed the buffer size
+			if (len + required_len >= (int)sizeof(temp_buf)) {
+				break;  // Prevent buffer overflow by not adding more entries
+			}
+
+			// Now safely add the entry
 			len += snprintf(temp_buf + len,
 			                sizeof(temp_buf) - len,
 			                "From: %s\nTo: %s\nPath: %s\nTime: %ld\n\n",
@@ -212,8 +232,13 @@ print_mails(char* buf, int buf_size, char* user)
 		}
 		current = current->next_by_name;
 	}
-	strncpy(buf, temp_buf, buf_size - 1);
-	buf[buf_size - 1] = '\0';  // Ensure null-termination
+
+	// Ensure the final copy does not exceed buf_size
+	if (len >= buf_size) {
+		len = buf_size - 1;  // Adjust len to fit in buf, leaving space for null terminator
+	}
+	strncpy(buf, temp_buf, len);
+	buf[len] = '\0';  // Ensure null-termination
 }
 
 void
@@ -241,33 +266,33 @@ print_mails_by_time(char* buf, int buf_size, time_t start, time_t end)
 }
 
 void
-print_mails_by_day(char* buf, int buf_size, time_t day)
+print_mails_by_day(char* buf, int buf_size, time_t day, const char* user)
 {
-	struct tm* day_info = localtime(&day);
-	int day_year = day_info->tm_year;
-	int day_month = day_info->tm_mon;
-	int day_mday = day_info->tm_mday;
+    struct tm* day_info = localtime(&day);
+    int day_year = day_info->tm_year;
+    int day_month = day_info->tm_mon;
+    int day_mday = day_info->tm_mday;
 
-	char temp_buf[1024];
-	mail_entry_t* current = access_registry->first_by_time;
-	int len = 0;
+    char temp_buf[1024];
+    mail_entry_t* current = access_registry->first_by_time;
+    int len = 0;
 
-	while (current != NULL) {
-		struct tm* mail_time_info = localtime(&(current->time));
-		if (mail_time_info->tm_year == day_year && mail_time_info->tm_mon == day_month &&
-		    mail_time_info->tm_mday == day_mday) {
-			len += snprintf(temp_buf + len,
-			                sizeof(temp_buf) - len,
-			                "From: %s\nTo: %s\nPath: %s\nTime: %ld\n\n",
-			                current->from,
-			                current->to,
-			                current->path,
-			                current->time);
-		}
-		current = current->next_by_time;
-	}
-	strncpy(buf, temp_buf, buf_size - 1);
-	buf[buf_size - 1] = '\0';  // Ensure null-termination
+    while (current != NULL) {
+        struct tm* mail_time_info = localtime(&(current->time));
+        if (mail_time_info->tm_year == day_year && mail_time_info->tm_mon == day_month &&
+            mail_time_info->tm_mday == day_mday && (strcmp(current->from, user) == 0 || strcmp(current->to, user) == 0)) {
+            len += snprintf(temp_buf + len,
+                            sizeof(temp_buf) - len,
+                            "From: %s\nTo: %s\nPath: %s\nTime: %ld\n\n",
+                            current->from,
+                            current->to,
+                            current->path,
+                            current->time);
+        }
+        current = current->next_by_time;
+    }
+    strncpy(buf, temp_buf, buf_size - 1);
+    buf[buf_size - 1] = '\0';  // Ensure null-termination
 }
 static bool
 is_user_present(const char* user)

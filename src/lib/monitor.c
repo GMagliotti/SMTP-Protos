@@ -81,25 +81,24 @@ process_valid_command(uint8_t command, uint8_t* response, uint8_t* status)
 	uint32_t val;
 	uint64_t bytes;
 	switch (command) {
-		case 0x00:
-			val = htonl(collected_data.total_connections);
-			for (int i = 0; i < 4; i++) {
-				response[6 + i] = (val >> (8 * i)) & 0xff;
-			}
-			break;
-		case 0x01:
-			val = htonl(collected_data.curr_connections);
-			for (int i = 0; i < 4; i++) {
-				response[6 + i] = (val >> (8 * i)) & 0xff;
-			}
-			break;
-		case 0x02:
-			bytes = collected_data.sent_bytes;
-			// we send the total bytes sent as if they were 8 different bytes in an array
-			for (int i = 0; i < 8; i++) {
-				response[6 + i] = (bytes >> (8 * i)) & 0xff;
-			}
-			break;
+	case 0x00:
+            val = htonl(collected_data.total_connections);
+            for (int i = 0; i < 4; i++) {
+                response[6 + i] = (val >> (8 * (3 - i))) & 0xff; // Ajuste para el orden correcto
+            }
+            break;
+        case 0x01:
+            val = htonl(collected_data.curr_connections);
+            for (int i = 0; i < 4; i++) {
+                response[6 + i] = (val >> (8 * (3 - i))) & 0xff; // Ajuste para el orden correcto
+            }
+            break;
+        case 0x02:
+            bytes = collected_data.sent_bytes;
+            for (int i = 0; i < 8; i++) {
+                response[6 + i] = (bytes >> (8 * (7 - i))) & 0xff; // Ajuste para el orden correcto
+            }
+            break;
 		case 0x03:
 			response[6] = 0x03;
 			break;

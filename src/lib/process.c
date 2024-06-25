@@ -293,7 +293,7 @@ handle_xget(struct selector_key* key, char* msg)
 
 	} else if (convert_and_validate_date(arg, &time)) {
 		// ver que ponemos en el request
-		print_mails_by_day(msg, RESPONSE_SIZE, time);
+		print_mails_by_day(msg, RESPONSE_SIZE, time,  (char*)data->user);
 
 	} else {
 		bad_syntax(msg, "XGET <date> | XGET ALL");
