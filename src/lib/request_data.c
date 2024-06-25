@@ -67,20 +67,20 @@ request_parser_data_feed(struct request_parser* p, const uint8_t c)
  * @param buf Buffer to write
  * @param len Length of the buffer
  */
-static int 
-write_partial(int fd, const char* buf, size_t len)
-{	
-	logf(LOG_DEBUG, "Writing %ld bytes to fd %d", len, fd);
-	int old_fl = fcntl(fd, F_GETFL);
-	fcntl(fd, F_SETFL, O_APPEND);
-	int bytes_written = write(fd, buf, len);
-	if (bytes_written == -1) {
-		logf(LOG_ERROR, "Error writing to fd %d", fd);
-		perror("write");
-	}
-	fcntl(fd, F_SETFL, old_fl & ~O_APPEND);
-	return bytes_written;
-}
+// static int 
+// write_partial(int fd, const char* buf, size_t len)
+// {	
+// 	logf(LOG_DEBUG, "Writing %ld bytes to fd %d", len, fd);
+// 	int old_fl = fcntl(fd, F_GETFL);
+// 	fcntl(fd, F_SETFL, O_APPEND);
+// 	int bytes_written = write(fd, buf, len);
+// 	if (bytes_written == -1) {
+// 		logf(LOG_ERROR, "Error writing to fd %d", fd);
+// 		perror("write");
+// 	}
+// 	fcntl(fd, F_SETFL, old_fl & ~O_APPEND);
+// 	return bytes_written;
+// }
 
 enum request_state
 body(const uint8_t c, struct request_parser* p)
@@ -91,7 +91,7 @@ body(const uint8_t c, struct request_parser* p)
 		case '\r':
 			if (p->i > 1 && p->request->data[p->i - 1] == '.' && p->request->data[p->i - 2] == '\n') {
 				p->request->data[p->i - 3] = '\0';
-				write_partial(*p->output_fd, p->request->data, p->i - 1);
+				//write_partial(*p->output_fd, p->request->data, p->i - 1);
 				return request_cr;
 			}
 			break;
@@ -103,7 +103,7 @@ body(const uint8_t c, struct request_parser* p)
 		p->request->data[p->i++] = (char)c;
 		next = request_body;
 	} else {
-		write_partial(*p->output_fd, p->request->data, sizeof(p->request->data));
+		//write_partial(*p->output_fd, p->request->data, sizeof(p->request->data));
 		p->i = 0;
 		p->request->data[p->i++] = (char)c;
 		next = request_body;

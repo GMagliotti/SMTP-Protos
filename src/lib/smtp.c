@@ -78,7 +78,7 @@ Cada estado va a tener un handlers que hay que definir
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
 #define MAIL_DIR_SIZE          4
 
-
+#define WELCOME "220 foo.pdc ESMTP Postfix (Ubuntu)\n"
 
 typedef enum request_state (*state_handler)(const uint8_t c, struct request_parser* p);
 const fd_handler* get_smtp_handler(void);
@@ -103,6 +103,12 @@ void smtp_done(selector_key* key);
 bool read_complete(enum request_state st);
 static inline void clean_request(struct selector_key* key);
 
+static socket_state request_read_posta(struct selector_key* key);
+
+
+typedef enum request_state (*consume_handler)(buffer* b, struct request_parser* p, bool* errored);
+
+
 // int create_directory_if_not_exists(char* maildir);
 // static char* get_and_create_maildir(char* mail_from);
 static const struct state_definition states_handlers[] = {
@@ -122,14 +128,14 @@ static const struct state_definition states_handlers[] = {
 	},
 	{
 	    .state = REQUEST_DATA,
-	    .on_read_ready = request_data_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
+	    .on_read_ready = request_read_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
 	    .on_arrival = request_data_init,        // setteamos el parser. Abrimos el FD al archivo de salida.
 	    .on_departure = request_data_close,     // cerramos el parser
 
 	},
 	{
 	    .state = REQUEST_ADMIN,
-	    .on_read_ready = request_admin_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
+	    .on_read_ready = request_read_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
 	    .on_arrival = request_admin_init,        // setteamos el parser. Abrimos el FD al archivo de salida.
 	    .on_departure = request_admin_close,     // cerramos el parser
 
@@ -151,6 +157,10 @@ process_handler handlers_table[] = {
 	[ERROR] = NULL,       [XAUTH] = handle_xauth, [XFROM] = handle_xfrom, [XGET] = handle_xget
 };
 
+consume_handler consumers_table[] = {
+	[REQUEST_READ] = request_consume, [REQUEST_ADMIN] = request_consume_admin, [REQUEST_DATA] = request_consume_data
+};
+
 static void read_handler(struct selector_key* key);
 static void write_handler(struct selector_key* key);
 static void close_handler(struct selector_key* key);
@@ -165,13 +175,24 @@ read_handler(struct selector_key* key)
 		smtp_done(key);
 	}
 }
+// static void
+// smtp_destroy(struct smtp_data* state)
+// {
+// 	free(state);
+// }
 static void
 write_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
 	const socket_state st = stm_handler_write(&data->stm, key);
-	if (REQUEST_ERROR == st || REQUEST_DONE == st) {
+
+	if (REQUEST_DONE == st || REQUEST_ERROR == st) {
 		smtp_done(key);
+	} else if (REQUEST_READ == st || REQUEST_DATA == st) {
+		buffer* rb = &ATTACHMENT(key)->read_buffer;
+		if (buffer_can_read(rb)) {
+			read_handler(key);  // Si hay para leer en el buffer, sigo leyendo sin bloquearme
+		}
 	}
 }
 static void
@@ -179,6 +200,7 @@ close_handler(struct selector_key* key)
 {
 	stm_handler_close(&ATTACHMENT(key)->stm, key);
 	monitor_close_connection();
+	// smtp_destroy(ATTACHMENT(key));
 }
 
 static fd_handler smtp_handler = {
@@ -241,8 +263,8 @@ smtp_passive_accept(selector_key* key)
 
 	stm_init(&data->stm);
 
-	memcpy(&data->raw_buff_write, "220 Bienvenido al servidor SMTP\n\0", 32);
-	buffer_write_adv(&data->write_buffer, 32);
+	memcpy(&data->raw_buff_write, WELCOME, strlen(WELCOME));
+	buffer_write_adv(&data->write_buffer, strlen(WELCOME));
 
 	selector_status status = selector_register(key->s, new_socket, get_smtp_handler(), OP_WRITE, data);
 
@@ -268,9 +290,9 @@ request_process(struct selector_key* key)
 	char msg[RESPONSE_SIZE];
 	smtp_state st = data->state;
 
-	if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_WRITE)) {
-		return REQUEST_ERROR;
-	}
+	// if (SELECTOR_SUCCESS != selector_set_interest_key(key, OP_WRITE)) {
+	// 	return REQUEST_ERROR;
+	// }
 	size_t count;
 
 	uint8_t* ptr = buffer_write_ptr(&data->write_buffer, &count);
@@ -288,7 +310,6 @@ request_process(struct selector_key* key)
 	}
 
 	size_t len = strlen(msg);
-	msg[len++] = '\0';
 	memcpy(ptr, msg, len);
 	buffer_write_adv(&data->write_buffer, len);
 
@@ -347,33 +368,54 @@ request_read_init(unsigned int state, struct selector_key* key)
 	request_parser_init(&data->request_parser);
 }
 
+static socket_state
+request_read_posta(struct selector_key* key)
+{
+	smtp_data* data = ATTACHMENT(key);
+	socket_state ret = data->stm.current->state;
+
+	bool error;
+
+	consume_handler consumer = consumers_table[data->stm.current->state];
+
+	enum request_state state = consumer(&data->read_buffer, &data->request_parser, &error);
+
+	if (request_is_done(state, 0)) {
+		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
+			// Procesamiento
+			
+			ret = request_process(key);
+		} else {
+			ret = REQUEST_ERROR;
+		}
+	}
+	// if (state == request_error) {
+	// 	buffer_reset(&data->read_buffer);
+	// }
+	return ret;
+}
+
 socket_state
 request_read_handler(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
+
+	if (buffer_can_read(&data->read_buffer)) {
+		return request_read_posta(key);
+	}
+
 	size_t count;
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
 
-	socket_state ret = REQUEST_READ;
 
 	if (recv_bytes <= 0) {
 		return REQUEST_ERROR;
 	}
 
 	buffer_write_adv(&data->read_buffer, recv_bytes);  // avisa que hay recv_bytes bytes menos por leer
-	// procesamiento
-	bool error = false;
 
-	enum request_state state = request_consume(&data->read_buffer, &data->request_parser, &error);
-	if (request_is_done(state, 0)) {
-		ret = request_process(key);
-	}
-	if (state == request_error) {
-		buffer_reset(&data->read_buffer);
-	}
-
-	return ret;
+	return request_read_posta(key);
 }
 
 void
@@ -459,23 +501,7 @@ request_data_handler(struct selector_key* key)
 	if (request_is_done(state, 0)) {
 		ret = request_process(key);
 	}
-	/*
-	if (request_file_flush(st,
-	                       &data->request_parser)) {  // request_file_flush returns true if the buffer is full
-	                                                  // or the request is done
-
-	    int fd = data->output_fd;
-	    char* ptr = data->request_parser.request->data;
-
-	    int index = data->request_parser.i;
-
-	    int written = write(fd, ptr, index);
-	    if (written < 0) {
-	        perror("write");
-	        return ERROR;
-	    }
-	}
-	*/
+	
 	return ret;
 }
 void
@@ -514,7 +540,7 @@ request_data_close(unsigned int state, struct selector_key* key)
 {
 	if (state == REQUEST_DATA) {
 		smtp_data* data = ATTACHMENT(key);
-		
+
 		// qne patch, replace if possible
 		for (size_t i = 0; i < data->rcpt_qty; i++) {
 			copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd);

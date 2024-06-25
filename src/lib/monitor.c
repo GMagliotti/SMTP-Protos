@@ -13,6 +13,8 @@
 #define VERSION   0x00
 #define TOKEN     0xffe91a2b3c4d5e6f
 
+uint64_t be64toh(uint64_t big_endian_64bits);
+uint64_t htobe64(uint64_t host_64bits);
 static struct monitor_collection_data_t collected_data = {
 	.sent_bytes = 0,
 	.curr_connections = 0,
@@ -81,24 +83,18 @@ process_valid_command(uint8_t command, uint8_t* response, uint8_t* status)
 	uint32_t val;
 	uint64_t bytes;
 	switch (command) {
-	case 0x00:
-            val = htonl(collected_data.total_connections);
-            for (int i = 0; i < 4; i++) {
-                response[6 + i] = (val >> (8 * (3 - i))) & 0xff; // Ajuste para el orden correcto
-            }
-            break;
-        case 0x01:
-            val = htonl(collected_data.curr_connections);
-            for (int i = 0; i < 4; i++) {
-                response[6 + i] = (val >> (8 * (3 - i))) & 0xff; // Ajuste para el orden correcto
-            }
-            break;
-        case 0x02:
-            bytes = collected_data.sent_bytes;
-            for (int i = 0; i < 8; i++) {
-                response[6 + i] = (bytes >> (8 * (7 - i))) & 0xff; // Ajuste para el orden correcto
-            }
-            break;
+		case 0x00:
+			val = htonl(collected_data.total_connections);
+			memcpy(&response[6], &val, sizeof(val));
+			break;
+		case 0x01:
+			val = htonl(collected_data.curr_connections);
+			memcpy(&response[6], &val, sizeof(val));
+			break;
+		case 0x02:
+			bytes = htobe64(collected_data.sent_bytes);  // Convertir bytes a big endian
+			memcpy(&response[6], &bytes, sizeof(bytes));
+			break;
 		case 0x03:
 			response[6] = 0x03;
 			break;
@@ -274,4 +270,33 @@ void
 monitor_add_sent_bytes(unsigned long bytes)
 {
 	collected_data.sent_bytes += bytes;
+}
+
+// Función para convertir de big-endian a host-endian
+uint64_t
+be64toh(uint64_t big_endian_64bits)
+{
+	uint64_t host_64bits = 0;
+	uint8_t* p = (uint8_t*)&big_endian_64bits;
+	host_64bits = ((uint64_t)p[0] << 56) | ((uint64_t)p[1] << 48) | ((uint64_t)p[2] << 40) | ((uint64_t)p[3] << 32) |
+	              ((uint64_t)p[4] << 24) | ((uint64_t)p[5] << 16) | ((uint64_t)p[6] << 8) | (uint64_t)p[7];
+	return host_64bits;
+}
+
+// Función para convertir de host-endian a big-endian
+
+uint64_t
+htobe64(uint64_t host_64bits)
+{
+	uint64_t big_endian_64bits = 0;
+	uint8_t* p = (uint8_t*)&big_endian_64bits;
+	p[0] = (host_64bits >> 56) & 0xff;
+	p[1] = (host_64bits >> 48) & 0xff;
+	p[2] = (host_64bits >> 40) & 0xff;
+	p[3] = (host_64bits >> 32) & 0xff;
+	p[4] = (host_64bits >> 24) & 0xff;
+	p[5] = (host_64bits >> 16) & 0xff;
+	p[6] = (host_64bits >> 8) & 0xff;
+	p[7] = host_64bits & 0xff;
+	return big_endian_64bits;
 }

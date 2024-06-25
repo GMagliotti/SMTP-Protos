@@ -293,7 +293,7 @@ handle_xget(struct selector_key* key, char* msg)
 
 	} else if (convert_and_validate_date(arg, &time)) {
 		// ver que ponemos en el request
-		print_mails_by_day(msg, RESPONSE_SIZE, time,  (char*)data->user);
+		print_mails_by_day(msg, RESPONSE_SIZE, time, (char*)data->user);
 
 	} else {
 		bad_syntax(msg, "XGET <date> | XGET ALL");
@@ -302,7 +302,6 @@ handle_xget(struct selector_key* key, char* msg)
 
 	// realizar el
 	memset(&data->user, 0, sizeof(data->user));
-
 
 	return XGET;
 }
@@ -360,7 +359,7 @@ ok(char* buf, char* code)
 static void
 welcome(char* buf)
 {
-	sprintf(buf, "250-welcome message (capacidades podríamos poner) \n");
+	sprintf(buf, "250 EHLO recieved\n"); // \n250-PIPELINING\n250-SIZE\n10240000\n250-VRFY\n250-ETRN\n250-STARTTLS\n250-ENHANCEDSTATUSCODES\n250-8BITMIME\n250-DSN\n250-SMTPUTF8\n250 CHUNKING\n
 }
 
 static void
