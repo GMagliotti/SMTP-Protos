@@ -330,6 +330,7 @@ request_write_handler(struct selector_key* key)
 
 	ptr = buffer_read_ptr(buff, &count);
 
+	logf(LOG_DEBUG, "key->fd: %d, ptr=%p, count=%lu", key->fd, ptr, count);
 	send_bytes = send(key->fd, ptr, count, MSG_NOSIGNAL);
 	monitor_add_sent_bytes(send_bytes);
 
@@ -355,6 +356,8 @@ request_write_handler(struct selector_key* key)
 			}
 		}
 	} else {
+		perror("Send effed");
+		log(LOG_FATAL, "Send error in write handler");
 		ret = ERROR;
 	}
 	return ret;
@@ -525,13 +528,14 @@ request_data_init(unsigned int state, struct selector_key* key)
 	// My server doesn't work as a relay server, so we just need to create a file in the maildir associated with the
 	// client
 
-	int fd = get_temp_file_fd((char*)data->mail_from);
+	// MARK
+	int fd = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
 	if (fd < 0) {
 		log(LOG_ERROR, "Error getting temp file fd");
 		perror("get_temp_file_fd");
 		return;
 	}
-	data->output_fd = get_temp_file_fd((char*)data->mail_from);
+	data->output_fd = fd;
 
 	// We will write periodically to this file. Every time the buffer in the parser is full, we will write to the
 	// file Also, we will write if we find a \r\n.\r\n in the buffer
@@ -545,7 +549,7 @@ request_data_close(unsigned int state, struct selector_key* key)
 
 		// qne patch, replace if possible
 		for (size_t i = 0; i < data->rcpt_qty; i++) {
-			copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd);
+			copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd, data->filename_fd);
 		}
 
 		clean_request(key);
@@ -581,7 +585,7 @@ static inline void
 clean_request(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
-	close(data->output_fd);
+	// close(data->output_fd);
 	// free(data->request.data); // freeing the data buffer
 	memset(&data->request, 0, sizeof((data->request)));
 	memset(&data->mail_from, 0, sizeof((data->mail_from)));

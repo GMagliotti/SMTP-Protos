@@ -62,9 +62,14 @@ dkms.conf
 # Mails
 src/mail/*
 src/lib/mail/*
+src/test/mail/*
+src/Maildir/*
+src/lib/Maildir/*
+src/test/Maildir/*
 
 monitor/client/*
 monitor/*
 # Logs 
 src/log/*
 src/lib/log/*
+src/test/log/*

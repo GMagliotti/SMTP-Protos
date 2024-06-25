@@ -37,6 +37,7 @@ typedef struct smtp_data
 	struct buffer write_buffer;
 
 	int output_fd;  // file descriptor for the output file
+	char filename_fd[MAIL_FILE_NAME_LENGTH];
 
 	// parser
 	smtp_state state;

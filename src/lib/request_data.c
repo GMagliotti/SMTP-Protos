@@ -3,8 +3,13 @@
 #include <string.h>
 #include <strings.h>
 #include "logger.h"
+#include <errno.h>
+#include <sys/types.h>
+#include <pthread.h>
 
 
+
+// static pthread_t last_thread_id = 0;
 
 enum request_state body(const uint8_t c, struct request_parser* p);
 
@@ -72,13 +77,20 @@ write_partial(int fd, const char* buf, size_t len)
 {	
 	logf(LOG_DEBUG, "Writing %ld bytes to fd %d", len, fd);
 	int old_fl = fcntl(fd, F_GETFL);
-	fcntl(fd, F_SETFL, O_APPEND);
+	if (fcntl(fd, F_SETFL, O_APPEND) == -1) {
+		logf(LOG_ERROR, "Error   setting O_APPEND for fd %d. Error %d: %s", fd, errno, strerror(errno));
+		perror("fcntl");
+	
+	};
 	int bytes_written = write(fd, buf, len);
 	if (bytes_written == -1) {
-		logf(LOG_ERROR, "Error writing to fd %d", fd);
+		logf(LOG_ERROR, "Error writing to fd %d. Error %d: %s", fd, errno, strerror(errno));
 		perror("write");
 	}
-	fcntl(fd, F_SETFL, old_fl & ~O_APPEND);
+	if (fcntl(fd, F_SETFL, old_fl & ~O_APPEND) == -1) {
+		logf(LOG_ERROR, "Error unsetting O_APPEND for fd %d. Error %d: %s", fd, errno, strerror(errno));
+		perror("fcntl");
+	}
 	return bytes_written;
 }
 
@@ -91,7 +103,7 @@ body(const uint8_t c, struct request_parser* p)
 		case '\r':
 			if (p->i > 1 && p->request->data[p->i - 1] == '.' && p->request->data[p->i - 2] == '\n') {
 				p->request->data[p->i - 3] = '\0';
-				write_partial(*p->output_fd, p->request->data, p->i - 1);
+				write_partial(*p->output_fd, p->request->data, p->i - 3);
 				return request_cr;
 			}
 			break;
