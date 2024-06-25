@@ -104,9 +104,7 @@ static inline void clean_request(struct selector_key* key);
 
 static socket_state request_read_posta(struct selector_key* key);
 
-
 typedef enum request_state (*consume_handler)(buffer* b, struct request_parser* p, bool* errored);
-
 
 // int create_directory_if_not_exists(char* maildir);
 // static char* get_and_create_maildir(char* mail_from);
@@ -135,16 +133,16 @@ static const struct state_definition states_handlers[] = {
 	{
 	    .state = REQUEST_ADMIN,
 	    .on_read_ready = request_read_handler,  // handler para guardar en un buffer hasta encontrar <CRLF>.<CRLF>
-	    .on_arrival = request_admin_init,        // setteamos el parser. Abrimos el FD al archivo de salida.
-	    .on_departure = request_admin_close,     // cerramos el parser
+	    .on_arrival = request_admin_init,       // setteamos el parser. Abrimos el FD al archivo de salida.
+	    .on_departure = request_admin_close,    // cerramos el parser
 
 	},
 	{
-		.state = REQUEST_DONE,
+	    .state = REQUEST_DONE,
 	},
 	{
-		.state = REQUEST_ERROR,
-			
+	    .state = REQUEST_ERROR,
+
 	}
 
 };
@@ -154,9 +152,9 @@ process_handler handlers_table[] = {
 	[ERROR] = NULL,       [XAUTH] = handle_xauth, [XFROM] = handle_xfrom, [XGET] = handle_xget
 };
 
-consume_handler consumers_table[] = {
-	[REQUEST_READ] = request_consume, [REQUEST_ADMIN] = request_consume_admin, [REQUEST_DATA] = request_consume_data
-};
+consume_handler consumers_table[] = { [REQUEST_READ] = request_consume,
+	                                  [REQUEST_ADMIN] = request_consume_admin,
+	                                  [REQUEST_DATA] = request_consume_data };
 
 static void read_handler(struct selector_key* key);
 static void write_handler(struct selector_key* key);
@@ -299,13 +297,12 @@ request_process(struct selector_key* key)
 	bool is_quit = handle_quit(key, msg);
 	bool is_rset = handle_reset(key, msg);
 	bool is_xquit = handle_xquit(key, msg);
-	if (is_quit)
-	{
+	if (is_quit) {
 		return REQUEST_DONE;
 	}
-	
+
 	// LLAMAR AL SECUENCIAL
-	if (!(is_noop || is_rset || is_xquit )) {
+	if (!(is_noop || is_rset || is_xquit)) {
 		process_handler fn = handlers_table[st];
 		smtp_state next = fn(key, msg);
 		data->state = next;
@@ -388,7 +385,7 @@ request_read_posta(struct selector_key* key)
 	if (request_is_done(state, 0)) {
 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_WRITE)) {
 			// Procesamiento
-			
+
 			ret = request_process(key);
 		} else {
 			ret = REQUEST_ERROR;
@@ -412,7 +409,6 @@ request_read_handler(struct selector_key* key)
 	size_t count;
 	uint8_t* ptr = buffer_write_ptr(&data->read_buffer, &count);
 	ssize_t recv_bytes = recv(key->fd, ptr, count, 0);
-
 
 	if (recv_bytes <= 0) {
 		return REQUEST_ERROR;
@@ -506,7 +502,7 @@ request_data_handler(struct selector_key* key)
 	if (request_is_done(state, 0)) {
 		ret = request_process(key);
 	}
-	
+
 	return ret;
 }
 void

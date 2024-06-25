@@ -21,6 +21,7 @@
 #define BODY_SIZE            1024
 #define MAX_RCPT			 101
 #define RESPONSE_SIZE  1024
+#define LOCAL_DOMAIN "local"
 
 typedef struct smtp_data
 {
