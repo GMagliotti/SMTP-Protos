@@ -27,6 +27,7 @@
 #include <sys/socket.h>  // socket
 #include <sys/types.h>   // socket
 #include <unistd.h>
+#
 static bool done = false;
 
 static void
@@ -39,31 +40,59 @@ sigterm_handler(const int signal)
 int
 main(const int argc, const char** argv)
 {
+	char command[256];
 	unsigned port = 2525;
 	unsigned monitor_port = 2526;
 
-	if (argc == 1) {
-		// utilizamos el default
-	} else if (argc == 2) {
-		char* end = 0;
-		const long sl = strtol(argv[1], &end, 10);
-
-		if (end == argv[1] || '\0' != *end || ((LONG_MIN == sl || LONG_MAX == sl) && ERANGE == errno) || sl < 0 ||
-		    sl > USHRT_MAX) {
-			fprintf(stderr, "port should be an integer: %s\n", argv[1]);
-			return 1;
-		}
-		if (sl == 2526) {
-			fprintf(stderr, "port %ld is reserved for monitoring\n", sl);
-			return 1;
-		}
-		port = sl;
-	} else {
-		fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+	if (argc != 3) {
+		fprintf(stderr, "Usage: %s <port> <command>\n", argv[0]);
 		return 1;
 	}
 
+	// Validate port number
+	char* end = 0;
+	long sl = strtol(argv[1], &end, 10);
+
+	// if argv[1] is "-" then we use default port
+	if (strcmp(argv[1], "-") == 0) {
+		sl = 2525;
+	}
+
+	if (strcmp(argv[1], "-") != 0 &&
+	    (end == argv[1] || '\0' != *end || ((LONG_MIN == sl || LONG_MAX == sl) && ERANGE == errno) || sl < 0 ||
+	     sl > USHRT_MAX)) {
+		fprintf(stderr, "port should be an integer: %s\n", argv[1]);
+		return 1;
+	}
+	if (sl == 2526) {
+		fprintf(stderr, "port %ld is reserved for monitoring\n", sl);
+		return 1;
+	}
+	port = sl;
+
+	// Validate command
+	int c = 0;
+	printf("Command argument received: %s\n", argv[2]);
+	if (strcmp(argv[2], "-") != 0 && (c = access(argv[2], X_OK) != 0)) {
+		fprintf(stderr, "Command not executable or not found: %s\n", argv[2]);
+		return 1;
+	}
+	if (c) {
+		int n = sizeof(command);
+		if (strlen(argv[2]) > (size_t)n) {
+		    fprintf(stderr, "Command too long: %s\n", argv[2]);
+		    return 1;
+		}
+		strncpy(command, argv[2], n);
+		init_status(command);
+
+	} else {
+		init_status("cat");
+	}
+
 	// no tenemos nada que leer de stdin
+
+
 	close(0);
 
 	const char* err_msg = NULL;

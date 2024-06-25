@@ -85,5 +85,5 @@ typedef enum
 void smtp_done(selector_key* key);
 
 void smtp_passive_accept(selector_key* key);
-
+void init_status(char* program);
 #endif
