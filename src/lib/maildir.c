@@ -69,7 +69,7 @@ char * create_maildir(char * user) {
 	if (create_nonexistent_dir(maildir) == -1) {
 		goto finalize;
 	}
-	
+	snprintf(maildir, maildir_len, "./Maildir/%s", user);
 	return maildir;
 
 	finalize:
@@ -105,13 +105,14 @@ void copy_temp_to_new_single(char* email, int temp_file_fd, char* temp_file_name
 		char* email_dup = strdup(email);
 		char* name = strtok(email_dup, "@");
 		char* maildir_path = create_maildir(name);
+
 		if (maildir_path == NULL) {
 			logf(LOG_ERROR, "Error getting maildir for %s", email);
 			perror("get_and_create_maildir");
 			free(email_dup);
 			return;
 		}
-		
+		strcat(maildir_path, "/new");
 		strcat(maildir_path, "/");
 		strncat(maildir_path, temp_file_name, MAIL_FILE_NAME_LENGTH);
 

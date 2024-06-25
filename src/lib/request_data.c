@@ -26,7 +26,7 @@ request_consume_data(buffer* b, struct request_parser* p, bool* errored)
 {
 	enum request_state st = p->state;
 
-	while (buffer_can_read(b)) {
+	while (buffer_can_read(b)  &&  (p->i < sizeof(p->request->data) - 1)) {
 		const uint8_t c = buffer_read(b);
 		st = request_parser_data_feed(p, c);
 		if (request_is_done(st, errored)) {
@@ -72,27 +72,27 @@ request_parser_data_feed(struct request_parser* p, const uint8_t c)
  * @param buf Buffer to write
  * @param len Length of the buffer
  */
-static int 
-write_partial(int fd, const char* buf, size_t len)
-{	
-	logf(LOG_DEBUG, "Writing %ld bytes to fd %d", len, fd);
-	int old_fl = fcntl(fd, F_GETFL);
-	if (fcntl(fd, F_SETFL, O_APPEND) == -1) {
-		logf(LOG_ERROR, "Error   setting O_APPEND for fd %d. Error %d: %s", fd, errno, strerror(errno));
-		perror("fcntl");
+// static int 
+// write_partial(int fd, const char* buf, size_t len)
+// {	
+// 	logf(LOG_DEBUG, "Writing %ld bytes to fd %d", len, fd);
+// 	int old_fl = fcntl(fd, F_GETFL);
+// 	if (fcntl(fd, F_SETFL, O_APPEND) == -1) {
+// 		logf(LOG_ERROR, "Error   setting O_APPEND for fd %d. Error %d: %s", fd, errno, strerror(errno));
+// 		perror("fcntl");
 	
-	};
-	int bytes_written = write(fd, buf, len);
-	if (bytes_written == -1) {
-		logf(LOG_ERROR, "Error writing to fd %d. Error %d: %s", fd, errno, strerror(errno));
-		perror("write");
-	}
-	if (fcntl(fd, F_SETFL, old_fl & ~O_APPEND) == -1) {
-		logf(LOG_ERROR, "Error unsetting O_APPEND for fd %d. Error %d: %s", fd, errno, strerror(errno));
-		perror("fcntl");
-	}
-	return bytes_written;
-}
+// 	};
+// 	int bytes_written = write(fd, buf, len);
+// 	if (bytes_written == -1) {
+// 		logf(LOG_ERROR, "Error writing to fd %d. Error %d: %s", fd, errno, strerror(errno));
+// 		perror("write");
+// 	}
+// 	if (fcntl(fd, F_SETFL, old_fl & ~O_APPEND) == -1) {
+// 		logf(LOG_ERROR, "Error unsetting O_APPEND for fd %d. Error %d: %s", fd, errno, strerror(errno));
+// 		perror("fcntl");
+// 	}
+// 	return bytes_written;
+// }
 
 enum request_state
 body(const uint8_t c, struct request_parser* p)
@@ -103,7 +103,7 @@ body(const uint8_t c, struct request_parser* p)
 		case '\r':
 			if (p->i > 1 && p->request->data[p->i - 1] == '.' && p->request->data[p->i - 2] == '\n') {
 				p->request->data[p->i - 3] = '\0';
-				write_partial(*p->output_fd, p->request->data, p->i - 3);
+				// write_partial(*p->output_fd, p->request->data, p->i - 3);
 				return request_cr;
 			}
 			break;
@@ -114,12 +114,13 @@ body(const uint8_t c, struct request_parser* p)
 	if (p->i < sizeof(p->request->data) - 1) {
 		p->request->data[p->i++] = (char)c;
 		next = request_body;
-	} else {
-		write_partial(*p->output_fd, p->request->data, sizeof(p->request->data));
-		p->i = 0;
-		p->request->data[p->i++] = (char)c;
-		next = request_body;
 	}
+	// } else {
+	// 	// write_partial(*p->output_fd, p->request->data, sizeof(p->request->data));
+	// 	p->i = 0;
+	// 	p->request->data[p->i++] = (char)c;
+	// 	next = request_body;
+	// }
 	return next;
 }
 

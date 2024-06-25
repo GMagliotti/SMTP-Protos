@@ -1,11 +1,12 @@
 #ifndef SMTP_SERVER_H
 #define SMTP_SERVER_H
 #include "buffer.h"
-#include "states.h"
+#include "maildir.h"
 #include "request.h"
 #include "selector.h"
+#include "states.h"
 #include "stm.h"
-#include "maildir.h"
+
 #include <netdb.h>
 #include <stdbool.h>
 #include <string.h>
@@ -19,9 +20,11 @@
 #define COMMAND_LINE_SIZE    512
 #define MAIL_SIZE            255
 #define BODY_SIZE            1024
-#define MAX_RCPT			 101
-#define RESPONSE_SIZE  1024
-#define LOCAL_DOMAIN "local"
+#define MAX_RCPT             101
+#define RESPONSE_SIZE        1024
+#define MAX_PATH             300
+#define MAX_FILE_NAME        20
+#define LOCAL_DOMAIN         "local"
 
 typedef struct smtp_data
 {
@@ -50,30 +53,34 @@ typedef struct smtp_data
 	size_t rcpt_qty;
 	uint8_t data[BODY_SIZE];
 
+	uint8_t user[LOCAL_USER_NAME_SIZE + 1 + DOMAIN_NAME_SIZE];  // for admin requests
 
-	uint8_t user[LOCAL_USER_NAME_SIZE + 1 + DOMAIN_NAME_SIZE]; // for admin requests
-
-
+	char file_full_name[MAX_PATH];
+	char file_name[MAX_FILE_NAME];
 
 	// raw buffer
 	uint8_t raw_buff_write[BUFFER_SIZE];
 	uint8_t raw_buff_read[BUFFER_SIZE];
 } smtp_data;
 
- 
+struct status
+{
+	char* program;
+	bool transform;
+};
 
-typedef enum 
+typedef enum
 {
 
 	REQUEST_READ = 0,
 	REQUEST_WRITE,
 	REQUEST_DATA,
 	REQUEST_ADMIN,
+	REQUEST_DATA_WRITE,
 	REQUEST_DONE,
 	REQUEST_ERROR,
 	// definir los estados de la maquina de estados del protocolo SMTP
 } socket_state;
- 
 
 void smtp_done(selector_key* key);
 
