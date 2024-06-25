@@ -39,7 +39,6 @@ send_email(void* threadid)
 		pthread_exit(NULL);
 	}
 
-<<<<<<< HEAD
     // Read server response
     n = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
     if (n < 0) {
@@ -50,25 +49,10 @@ send_email(void* threadid)
     buffer[n] = '\0'; // Null-terminate the received string
     // random sleep
     
-    sleep(rand() % 4);
-=======
-	// Read server response
-	n = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
-	if (n < 0) {
-		perror("recv failed");
-		close(sockfd);
-		pthread_exit(NULL);
-	}
-	buffer[n] = '\0';  // Null-terminate the received string
-	// random sleep
->>>>>>> 8d2a015d1468429dbbc8295f6adc3dfd8fcfb0c4
+
 
 	// sleep(rand() % 1);
 
-<<<<<<< HEAD
-    //sleep(rand() % 1);
-    sleep(rand() % 4);
-=======
 	// Construct the email message in a single buffer
 	const char* email_message = "HELO example.com\r\n"
 	                            "MAIL FROM:<sender@local>\r\n"
@@ -80,7 +64,6 @@ send_email(void* threadid)
 	                            "\r\n"
 	                            "This is a test email.\r\n"
 	                            ".\r\n";
->>>>>>> 8d2a015d1468429dbbc8295f6adc3dfd8fcfb0c4
 
 	// Send the entire email message in one send
 	if (send(sockfd, email_message, strlen(email_message), 0) < 0) {

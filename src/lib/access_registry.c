@@ -71,9 +71,9 @@ generate_mock_emails()
 		snprintf(path, sizeof(path), "/var/mail/%s_to_%s_%d.eml", from, to, i);
 
 		// Register the mock email
-		register_mail(strdup(from),
-		              strdup(to),
-		              strdup(path),
+		register_mail(from,
+		              to,
+		              path,
 		              now - (rand() % 86400 * 2));  // Randomize the time within the last 30 days
 	}
 }
@@ -116,9 +116,9 @@ void
 register_mail(char* from, char* to, char* path, time_t time)
 {
 	mail_entry_t* new_mail = (mail_entry_t*)calloc(1, sizeof(mail_entry_t));
-	new_mail->from = from;
-	new_mail->to = to;
-	new_mail->path = path;
+	new_mail->from = strdup(from);
+	new_mail->to = strdup(to);
+	new_mail->path = strdup(path);
 	new_mail->time = time;
 
 	add_user(from);
