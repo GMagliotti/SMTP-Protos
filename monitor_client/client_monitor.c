@@ -1,5 +1,6 @@
 #include "client_monitor.h"
-
+uint64_t be64toh(uint64_t big_endian_64bits);
+uint64_t htobe64(uint64_t host_64bits);
 /* Request format: 14 bytes
  0      7 8     15 16    23 24    31 32    39 40    47 48    55 56    63
 +--------+--------+--------+--------+--------+--------+--------+--------+
@@ -20,25 +21,20 @@ print_bytes_recieved(uint8_t* buffer, int command)
 	uint64_t bytes = 0;
 	switch (command) {
 		case HIST_C:
-            for (int i = 0; i < 4; i++) {
-                qty |= (uint32_t)buffer[6 + i] << (8 * (3 - i)); // Ajuste para el orden correcto
-            }
-            qty = ntohl(qty);
-            printf("Historical connections: %u\n", qty);
-            return;
-        case CONC_C:
-            for (int i = 0; i < 4; i++) {
-                qty |= (uint32_t)buffer[6 + i] << (8 * (3 - i)); // Ajuste para el orden correcto
-            }
-            qty = ntohl(qty);
-            printf("Simultaneous connections: %u\n", qty);
-            return;
-        case BYTES_T:
-            for (int i = 0; i < 8; i++) {
-                bytes |= (uint64_t)buffer[6 + i] << (8 * (7 - i)); // Ajuste para el orden correcto
-            }
-            printf("Transferred bytes: %lu\n", bytes);
-            return;
+			memcpy(&qty, &buffer[6], sizeof(qty));
+			qty = ntohl(qty);  // Convertir de orden de red a orden de host
+			printf("Historical connections: %u\n", qty);
+			return;
+		case CONC_C:
+			memcpy(&qty, &buffer[6], sizeof(qty));
+			qty = ntohl(qty);  // Convertir de orden de red a orden de host
+			printf("Simultaneous connections: %u\n", qty);
+			return;
+		case BYTES_T:
+			memcpy(&bytes, &buffer[6], sizeof(bytes));
+			bytes = be64toh(bytes);  // Convertir de big endian a orden de host
+			printf("Transferred bytes: %lu\n", bytes);
+			return;
 		case TRANS_S:
 			// it is a boolean, 0x00 is off, 0x01 is on
 			if (buffer[6] == 0x00)
@@ -280,4 +276,33 @@ main(int argc, char* argv[])
 	close(sock);
 
 	return 0;
+}
+
+// Función para convertir de big-endian a host-endian
+uint64_t
+be64toh(uint64_t big_endian_64bits)
+{
+	uint64_t host_64bits = 0;
+	uint8_t* p = (uint8_t*)&big_endian_64bits;
+	host_64bits = ((uint64_t)p[0] << 56) | ((uint64_t)p[1] << 48) | ((uint64_t)p[2] << 40) | ((uint64_t)p[3] << 32) |
+	              ((uint64_t)p[4] << 24) | ((uint64_t)p[5] << 16) | ((uint64_t)p[6] << 8) | (uint64_t)p[7];
+	return host_64bits;
+}
+
+// Función para convertir de host-endian a big-endian
+
+uint64_t
+htobe64(uint64_t host_64bits)
+{
+	uint64_t big_endian_64bits = 0;
+	uint8_t* p = (uint8_t*)&big_endian_64bits;
+	p[0] = (host_64bits >> 56) & 0xff;
+	p[1] = (host_64bits >> 48) & 0xff;
+	p[2] = (host_64bits >> 40) & 0xff;
+	p[3] = (host_64bits >> 32) & 0xff;
+	p[4] = (host_64bits >> 24) & 0xff;
+	p[5] = (host_64bits >> 16) & 0xff;
+	p[6] = (host_64bits >> 8) & 0xff;
+	p[7] = host_64bits & 0xff;
+	return big_endian_64bits;
 }
