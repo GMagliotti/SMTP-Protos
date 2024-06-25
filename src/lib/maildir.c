@@ -70,6 +70,18 @@ create_maildir_directory(char* maildir_path)
 	return 0;
 }
 
+void rand_str(char *dest, size_t length) {
+    char charset[] = "0123456789"
+                     "abcdefghijklmnopqrstuvwxyz"
+                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    while (length-- > 0) {
+        size_t index = (double) rand() / RAND_MAX * (sizeof charset - 1);
+        *dest++ = charset[index];
+    }
+    *dest = '\0';
+}
+
 int get_temp_file_fd(char* email) {
 	logf(LOG_DEBUG, "Creating temp file for %s", email);
 	char* maildir = get_maildir(email);
@@ -91,9 +103,14 @@ int get_temp_file_fd(char* email) {
 	char filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
 	              MS_TEXT_SIZE] = { 0 };
 	time_t ms = time(NULL);
-	// filename like mail/<domain>/<user>/tmp/<timestamp>
-	snprintf(filename, sizeof(filename), "%s/tmp/%ld", maildir, ms);
+	
+	char * unique_str = malloc(11);
+	rand_str(unique_str, 10);
 
+	// filename like mail/<domain>/<user>/tmp/<timestamp>
+	snprintf(filename, sizeof(filename), "%s/tmp/%ld_%s", maildir, ms, unique_str);
+
+	free(unique_str);
 	int fd = open(filename, O_CREAT | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
 	if (fd < 0) {
 		logf(LOG_ERROR, "Error creating temp file for %s", email);
