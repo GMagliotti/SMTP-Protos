@@ -78,7 +78,18 @@ Cada estado va a tener un handlers que hay que definir
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
 #define MAIL_DIR_SIZE          4
 
-#define WELCOME "220 foo.pdc ESMTP Postfix (Ubuntu)\n"
+char* welcome_message = "220 local ESMTP Postfix (Ubuntu)\n"
+                        "\nComandos SMTP\n"
+                        "EHLO <user>\n"
+                        "MAIL FROM:<user@local>\n"
+                        "RCPTO TO:<other_user@local>\n\n"
+                        "Comandos ESMTP\n"
+                        "XAUTH token\n"
+                        "XFROM <local_user>\n"
+                        "XGET ALL\n"
+                        "XGET dd/mm/yyyy\n"
+                        "XALL <local_user>\n"
+                        "XQUIT\n\n";
 
 typedef enum request_state (*state_handler)(const uint8_t c, struct request_parser* p);
 const fd_handler* get_smtp_handler(void);
@@ -258,8 +269,8 @@ smtp_passive_accept(selector_key* key)
 
 	stm_init(&data->stm);
 
-	memcpy(&data->raw_buff_write, WELCOME, strlen(WELCOME));
-	buffer_write_adv(&data->write_buffer, strlen(WELCOME));
+	memcpy(&data->raw_buff_write, welcome_message, strlen(welcome_message));
+	buffer_write_adv(&data->write_buffer, strlen(welcome_message));
 
 	selector_status status = selector_register(key->s, new_socket, get_smtp_handler(), OP_WRITE, data);
 

@@ -334,6 +334,9 @@ selector_destroy(fd_selector s)
 			while (j != NULL) {
 				struct blocking_job* aux = j;
 				j = j->next;
+				if (aux->data != NULL) {
+					free(aux->data);
+				}
 				free(aux);
 			}
 			free(s->fds);
