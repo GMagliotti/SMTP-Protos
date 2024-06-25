@@ -24,6 +24,8 @@
 #define RESPONSE_SIZE        1024
 #define MAX_PATH             300
 #define MAX_FILE_NAME        20
+#define LOCAL_DOMAIN         "local"
+
 typedef struct smtp_data
 {
 	struct state_machine stm;
@@ -61,7 +63,8 @@ typedef struct smtp_data
 	uint8_t raw_buff_read[BUFFER_SIZE];
 } smtp_data;
 
-struct status {
+struct status
+{
 	char* program;
 	bool transform;
 };
@@ -82,7 +85,5 @@ typedef enum
 void smtp_done(selector_key* key);
 
 void smtp_passive_accept(selector_key* key);
-
-
 
 #endif

@@ -25,6 +25,8 @@ static void ok_data(char* buf);
 static void ok_body(char* buf);
 static bool is_valid(char* verb, char* state_verb, char* msg);
 static void bad_user(char* buf);
+static void mail_from_unknown(char* buf, char* mail);
+static void rcpt_to_unkown(char* buf, char* mail);
 // static void clean_request(struct selector_key* key);
 static void auth_msg(char* buf);
 
@@ -149,6 +151,19 @@ handle_from(struct selector_key* key, char* msg)
 		return FROM;
 	}
 
+	// if the data->mail_from's domain is not LOCAL_DOMAIN, we need to show an error message to the client
+	char* domain = strchr(mail, '@');
+	if (domain != NULL) {
+		domain++;
+
+		if (strcmp(domain, LOCAL_DOMAIN) != 0) {
+			// send error message to the client
+			mail_from_unknown(msg, mail);
+			// we return to previous state
+			return FROM;
+		}
+	}
+
 	strcpy((char*)data->mail_from, mail);
 	ok(msg, OK_MAIL);
 
@@ -179,6 +194,20 @@ handle_to(struct selector_key* key, char* msg)
 		bad_syntax(msg, "RCPT TO:<address>");
 		return TO;
 	}
+
+	// if the data->mail_from's domain is not LOCAL_DOMAIN, we need to show an error message to the client
+	char* domain = strchr(mail, '@');
+	if (domain != NULL) {
+		domain++;
+
+		if (strcmp(domain, LOCAL_DOMAIN) != 0) {
+			// send error message to the client
+			rcpt_to_unkown(msg, mail);
+			// we return to previous state
+			return TO;
+		}
+	}
+
 	strcpy((char*)data->rcpt_to[data->rcpt_qty++], mail);
 
 	ok(msg, OK_RCPT);
@@ -371,6 +400,18 @@ static void
 bad_syntax(char* buf, char* syntax)
 {
 	sprintf(buf, "501 5.5.4 Syntax: %s \n", syntax);
+}
+
+static void
+mail_from_unknown(char* buf, char* mail)
+{
+	sprintf(buf, "550 5.1.1 <%s>: Recipient address rejected: User unknown in local recipient table\n", mail);
+}
+
+static void
+rcpt_to_unkown(char* buf, char* mail)
+{
+	sprintf(buf, "553 5.1.8 <%s>: Sender address rejected: Domain not allowed\n", mail);
 }
 
 static void
