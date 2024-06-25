@@ -551,72 +551,56 @@ request_data_init(unsigned int state, struct selector_key* key)
 	data->request_parser.request = &data->request;
 	data->request_parser.output_fd = &data->output_fd;
 	request_parser_data_init(&data->request_parser);
+	data->is_body = false;
 
-	//  for each recipient open a file
+	int file = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
 
-	for (size_t i = 0; i < data->rcpt_qty; i++) {
-		// construir el maildir
-
-		int file = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
-
-		char to_send[50] = "From ";  // Esto no se pq es
-		strcat(to_send, (char*)data->mail_from);
-		// concat_date(to_send);
-
-		write(file, to_send, strlen(to_send));
-
-		if (config.transform) {
-			int pipe_fd[2];
-
-			int ret = pipe(pipe_fd);
-			if (ret != 0) {
-				perror("Error while creating pipe");
-				exit(EXIT_FAILURE);
-			}
-
-			int pid = fork();
-			if (pid < 0) {
-				perror("Error while creating slave");
-				exit(EXIT_FAILURE);
-			}
-
-			if (pid == 0) {
-				// Redirect stdin and stdout to pipes
-				close(STDIN_FILENO);
-				dup(pipe_fd[0]);  // read end of where app writes
-				close(STDOUT_FILENO);
-				dup(file);  // write end of where app reads
-
-				close(pipe_fd[0]);
-				close(pipe_fd[1]);
-				close(file);
-
-				execlp(config.program, config.program, (char*)NULL);
-				perror("Error while creating slave");
-				exit(EXIT_FAILURE);
-			}
-
-			// Father
-			close(pipe_fd[0]);
-			close(file);
-			data->output_fd = pipe_fd[1];
-		} else {
-			data->output_fd = file;
+	if (config.transform) {
+		int pipe_fd[2];
+		if (pipe(pipe_fd) != 0) {
+			perror("Error while creating pipe");
+			exit(EXIT_FAILURE);
 		}
 
-		selector_register(key->s, data->output_fd, &file_handler, OP_NOOP, data);
+		int pid = fork();
+		if (pid < 0) {
+			perror("Error while creating slave");
+			exit(EXIT_FAILURE);
+		}
+
+		if (pid == 0) {  // Child process
+			close(STDIN_FILENO);
+			dup2(pipe_fd[0], STDIN_FILENO);  // Correctly duplicate to stdin
+			close(STDOUT_FILENO);
+			dup2(file, STDOUT_FILENO);  // Correctly duplicate to stdout
+
+			close(pipe_fd[0]);
+			close(pipe_fd[1]);
+			close(file);
+
+			execlp(config.program, config.program, (char*)NULL);
+			perror("Error while executing transformation program");
+			exit(EXIT_FAILURE);
+		}
+
+		// Parent process
+		close(pipe_fd[0]);             // Close read end, not used by parent
+		close(file);                   // Close file, as it's now handled by child
+		data->output_fd = pipe_fd[1];  // Use write end of the pipe to write data
+	} else {
+		data->output_fd = file;
 	}
 
-	// int fd = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
-	// if (fd < 0) {
-	// 	log(LOG_ERROR, "Error getting temp file fd");
-	// 	perror("get_temp_file_fd");
-	// 	return;
-	// }
-	// data->output_fd = fd;
+	// Escribir la información del remitente
+	dprintf(data->output_fd, "MAIL FROM: <%s>\r\n", data->mail_from);
 
-	// We will write periodically to this file. Every time the buffer in the parser is full, we will write to the
-	// file Also, we will write if we find a \r\n.\r\n in the buffer
+	// Escribir la información de los destinatarios
+	for (size_t i = 0; i < data->rcpt_qty; i++) {
+		dprintf(data->output_fd, "RCPT TO: <%s>\r\n", data->rcpt_to[i]);
+	}
+	dprintf(file, "DATA\r\n");
+
+	selector_register(key->s, data->output_fd, &file_handler, OP_NOOP, data);
 }
 
 void
@@ -629,7 +613,6 @@ request_data_close(unsigned int state, struct selector_key* key)
 		// for (size_t i = 0; i < data->rcpt_qty; i++) {
 		// 	copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd, data->filename_fd);
 		// }
-
 
 		request_close(&data->request_parser);
 	}
@@ -654,14 +637,13 @@ write_file_handler(struct selector_key* key)
 	}
 
 	if (data->request_parser.state == request_done) {
-		if (SELECTOR_SUCCESS != selector_set_interest(key->s, data->fd, OP_WRITE)) {
-			return REQUEST_ERROR;
-		}
-
 		for (size_t i = 0; i < data->rcpt_qty; i++) {
 			copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd, data->filename_fd);
 			time_t now = time(NULL);
 			register_mail((char*)data->mail_from, (char*)data->rcpt_to[i], data->filename_fd, now);
+		}
+		if (SELECTOR_SUCCESS != selector_set_interest(key->s, data->fd, OP_WRITE)) {
+			return REQUEST_ERROR;
 		}
 
 		close(data->output_fd);
@@ -673,7 +655,6 @@ write_file_handler(struct selector_key* key)
 
 		data->output_fd = 0;
 		clean_request(key);
-
 
 		// Procesamiento
 		return request_process(key);

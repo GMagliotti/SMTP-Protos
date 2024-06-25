@@ -77,30 +77,7 @@ generate_mock_emails()
 		              now - (rand() % 86400 * 2));  // Randomize the time within the last 30 days
 	}
 }
-// =======
-// void mock() {
-// 	srand(time(NULL));
-// 	char* names[MOCKGIC_NUMBER] = {
-// 		"Mateo@loremipsum.com",
-// 		"Juan@loremipsum.com",
-// 		"Francisco@loremipsum.com",
-// 		"Franco@loremipsum.com",
-// 		"Marcelo@loremipsum.com",
-// 		"Ariel@loremipsum.com",
-// 		"Juliana@loremipsum.com",
-// 		"Lucia@loremipsum.com",
-// 		"Maria@loremipsum.com",
-// 		"Josefina@loremipsum.com"
-// 	};
 
-// 	for (int i = 0; i < MOCKGIC_NUMBER; i++) {
-// 		for (int j = 0; j < MOCK_MAILS_PER_USER; j++ ) {
-// 			register_mail(names[i], names[rand() % MOCKGIC_NUMBER], "/path/to/email", MOCK_DAY_EPOCHUNIX + rand() %
-// RAND_MAX_DISTANCE);
-// 		}
-// 	}
-
-// >>>>>>> 245e15a84609d1a9368929a348f15a6b5e953f12
 
 void
 init_access_registry()

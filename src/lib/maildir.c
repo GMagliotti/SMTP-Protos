@@ -1,29 +1,34 @@
 #include "maildir.h"
+
 #include "smtp.h"
+
 #include <sys/stat.h>
-#define MAIL_DIR_SIZE 7
-#define DOMAIN_NAME_SIZE 255
-#define LOCAL_USER_NAME_SIZE 64
-#define MAILBOX_INNER_DIR_SIZE 3 // tmp, new, cur
-#define MS_TEXT_SIZE 13
-#define MAIL_FILE_NAME_LENGTH 24
-#define RAND_STR_LENGTH 10
+#define MAIL_DIR_SIZE          7
+#define DOMAIN_NAME_SIZE       255
+#define LOCAL_USER_NAME_SIZE   64
+#define MAILBOX_INNER_DIR_SIZE 3  // tmp, new, cur
+#define MS_TEXT_SIZE           13
+#define MAIL_FILE_NAME_LENGTH  24
+#define RAND_STR_LENGTH        10
 
-static char * 
-rand_str(char *dest, size_t length) {
-    char charset[] = "0123456789"
-                     "abcdefghijklmnopqrstuvwxyz"
-                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static char*
+rand_str(char* dest, size_t length)
+{
+	char charset[] = "0123456789"
+	                 "abcdefghijklmnopqrstuvwxyz"
+	                 "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    while (length-- > 0) {
-        size_t index = (double) rand() / RAND_MAX * (sizeof charset - 1);
-        *dest++ = charset[index];
-    }
-    *dest = '\0';
+	while (length-- > 0) {
+		size_t index = (double)rand() / RAND_MAX * (sizeof charset - 1);
+		*dest++ = charset[index];
+	}
+	*dest = '\0';
 	return dest;
 }
 
-int create_nonexistent_dir(char * path) {
+int
+create_nonexistent_dir(char* path)
+{
 	struct stat sb;
 	if (stat(path, &sb) == -1) {
 		if (mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
@@ -36,7 +41,9 @@ int create_nonexistent_dir(char * path) {
 	return 0;
 }
 
-char * create_maildir(char * user) {
+char*
+create_maildir(char* user)
+{
 	char maildir_len = 2 + MAIL_DIR_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE;
 	char* maildir = malloc(maildir_len);
 
@@ -72,18 +79,22 @@ char * create_maildir(char * user) {
 	snprintf(maildir, maildir_len, "./Maildir/%s", user);
 	return maildir;
 
-	finalize:
-		free(maildir);
-		return NULL;
+finalize:
+	free(maildir);
+	return NULL;
 }
 
-int create_temp_mail_file(char* email, char * copy_addr) {
+int
+create_temp_mail_file(char* email, char* copy_addr)
+{
 	char* email_dup = strdup(email);
 	char* name = strtok(email_dup, "@");
 	char* maildir_path = create_maildir(name);
 	if (maildir_path == NULL) {
 		logf(LOG_ERROR, "Error creating maildir for %s", email);
 	}
+	strcat(maildir_path, "/tmp");
+	strncat(maildir_path, copy_addr, MAIL_FILE_NAME_LENGTH);
 
 	if (copy_addr[0] == '\0') {
 		char random[RAND_STR_LENGTH + 1];
@@ -98,80 +109,78 @@ int create_temp_mail_file(char* email, char * copy_addr) {
 	return fd;
 }
 
-void copy_temp_to_new_single(char* email, int temp_file_fd, char* temp_file_name) {
-		// we copy the mail from mail/<domain>/<user>/tmp/<timestamp> to mail/<domain>/<rcpt_to>/new/<timestamp>
-		// we need to create the new dir if it doesn't exist
-		logf(LOG_DEBUG, "Copying temp file (fd=%d) to new for email %s", temp_file_fd, email);
-		char* email_dup = strdup(email);
-		char* name = strtok(email_dup, "@");
-		char* maildir_path = create_maildir(name);
+void
+copy_temp_to_new_single(char* email, char* temp_file_name)
+{
 
-		if (maildir_path == NULL) {
-			logf(LOG_ERROR, "Error getting maildir for %s", email);
-			perror("get_and_create_maildir");
-			free(email_dup);
-			return;
-		}
-		strcat(maildir_path, "/new");
-		strcat(maildir_path, "/");
-		strncat(maildir_path, temp_file_name, MAIL_FILE_NAME_LENGTH);
 
-		int new_fd = open(maildir_path, O_CREAT | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
-		if (new_fd < 0) {
-			logf(LOG_ERROR, "Error creating new mail file for %s", email);
-			free(email_dup);
-			free(maildir_path);
-			perror("open");
-			return;
-		} 
 
+
+
+	// we copy the mail from mail/<domain>/<user>/tmp/<timestamp> to mail/<domain>/<rcpt_to>/new/<timestamp>
+	// we need to create the new dir if it doesn't exist
+	logf(LOG_DEBUG, "Copying temp file (fd=%d) to new for email %s", temp_file_fd, email);
+	char* email_dup = strdup(email);
+	char* name = strtok(email_dup, "@");
+	char* maildir_path = create_maildir(name);
+
+	if (maildir_path == NULL) {
+		logf(LOG_ERROR, "Error getting maildir for %s", email);
+		perror("get_and_create_maildir");
+		free(email_dup);
+		return;
+	}
+	strcat(maildir_path, "/new");
+	strcat(maildir_path, "/");
+	strncat(maildir_path, temp_file_name, MAIL_FILE_NAME_LENGTH);
+
+	int new_fd = open(maildir_path, O_CREAT | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
+	if (new_fd < 0) {
+		logf(LOG_ERROR, "Error creating new mail file for %s", email);
 		free(email_dup);
 		free(maildir_path);
+		perror("open");
+		return;
+	}
 
-		// we need to copy the file from the tmp dir to the new dir
-		// we need to read the file from the tmp dir
+	free(email_dup);
+	free(maildir_path);
 
-		// char* domain = strchr(email, '@') + 1;
-		// char local_user[LOCAL_USER_NAME_SIZE] = { 0 };
+	char buffer[1024] = { 0 };
 
-		// char tmp_filename[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE +
-		//                   1 + MS_TEXT_SIZE] = { 0 };
-		// snprintf(tmp_filename, sizeof(tmp_filename), "mail/%s/%s/tmp/%ld", domain, local_user, ms);
+	ssize_t bytes_read = 0;
+	lseek(
+	    temp_file_fd, 0, SEEK_SET);  // we need to go to the beginning of the file because we have already written to it
 
-		// // we need to read from the tmp file and write to the new file
-		char buffer[1024] = { 0 };
+	// This while loop is provisional. We need to read the whole file and apply the transformation if there is any
+	// The reason for doing it as a while loop is because we haven't implemented transformations yet
 
-		ssize_t bytes_read = 0;
-		lseek(temp_file_fd, 0, SEEK_SET);  // we need to go to the beginning of the file because we have already written to it
-
-		// This while loop is provisional. We need to read the whole file and apply the transformation if there is any
-		// The reason for doing it as a while loop is because we haven't implemented transformations yet
-
-		while ((bytes_read = read(temp_file_fd, buffer, sizeof(buffer))) > 0) {
-			ssize_t bytes_written = write(new_fd, buffer, bytes_read);
-			if (bytes_written < 0) {
-				logf(LOG_ERROR, "Error writing to new mail file for %s (fd=%d)", email, new_fd);
-				perror("write");
-				return;
-			}
-		}
-
-		if (bytes_read < 0) {
-			logf(LOG_ERROR, "Error reading from temp mail file (fd=%d)", temp_file_fd);
-			perror("read");
+	while ((bytes_read = read(temp_file_fd, buffer, sizeof(buffer))) > 0) {
+		ssize_t bytes_written = write(new_fd, buffer, bytes_read);
+		if (bytes_written < 0) {
+			logf(LOG_ERROR, "Error writing to new mail file for %s (fd=%d)", email, new_fd);
+			perror("write");
 			return;
 		}
+	}
 
-		if (close(new_fd) != 0) {
-			logf(LOG_ERROR, "Error closing new mail file (fd=%d)", new_fd);
-			perror("close");
-			return;
-		}
+	if (bytes_read < 0) {
+		logf(LOG_ERROR, "Error reading from temp mail file (fd=%d)", temp_file_fd);
+		perror("read");
+		return;
+	}
+
+	if (close(new_fd) != 0) {
+		logf(LOG_ERROR, "Error closing new mail file (fd=%d)", new_fd);
+		perror("close");
+		return;
+	}
 }
 
-
-char* get_or_create_maildir(char* email) {
-    int maildir_size = MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE;
+char*
+get_or_create_maildir(char* email)
+{
+	int maildir_size = MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE;
 	char* maildir = malloc(maildir_size);  // Consider dynamic sizing based on mail_from length
 	if (maildir == NULL) {
 		perror("malloc");
@@ -234,9 +243,9 @@ create_maildir_directory(char* maildir_path)
 	return 0;
 }
 
-
-
-int get_temp_file_fd(char* email, char * copy_addr) {
+int
+get_temp_file_fd(char* email, char* copy_addr)
+{
 	logf(LOG_DEBUG, "Creating temp file for %s", email);
 	char* maildir = NULL;
 
@@ -256,15 +265,15 @@ int get_temp_file_fd(char* email, char * copy_addr) {
 	}
 
 	char file_path[MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 +
-	              MS_TEXT_SIZE] = { 0 };
-				  
+	               MS_TEXT_SIZE] = { 0 };
+
 	time_t ms = time(NULL);
 
-	char * unique_str = malloc(11);
+	char* unique_str = malloc(11);
 	rand_str(unique_str, 10);
 
 	if (copy_addr != NULL) {
-		snprintf(copy_addr, MS_TEXT_SIZE+1, "%ld_%s", ms, unique_str);
+		snprintf(copy_addr, MS_TEXT_SIZE + 1, "%ld_%s", ms, unique_str);
 	}
 	// file_path like mail/<domain>/<user>/tmp/<timestamp>
 	snprintf(file_path, sizeof(file_path), "%s/tmp/%ld_%s", maildir, ms, unique_str);
@@ -287,4 +296,3 @@ int get_temp_file_fd(char* email, char * copy_addr) {
 // 		copy_temp_to_new_single((*recipients)[i], temp_file_fd);
 // 	}
 // }
-

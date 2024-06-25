@@ -58,6 +58,8 @@ typedef struct smtp_data
 	char file_full_name[MAX_PATH];
 	char file_name[MAX_FILE_NAME];
 
+	bool is_body;
+
 	// raw buffer
 	uint8_t raw_buff_write[BUFFER_SIZE];
 	uint8_t raw_buff_read[BUFFER_SIZE];
