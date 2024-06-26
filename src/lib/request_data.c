@@ -33,6 +33,7 @@ request_consume_data(buffer* b, struct request_parser* p, bool* errored)
 			break;
 		}
 	}
+	p->request->data[p->i] = '\0';
 	return st;
 }
 
@@ -113,6 +114,10 @@ body(const uint8_t c, struct request_parser* p)
 
 	if (p->i < sizeof(p->request->data) - 1) {
 		p->request->data[p->i++] = (char)c;
+		next = request_body;
+	}
+	else{
+		p->request->data[p->i] = '\0';
 		next = request_body;
 	}
 	// } else {

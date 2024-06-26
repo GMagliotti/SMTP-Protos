@@ -31,7 +31,7 @@ static void rcpt_to_unkown(char* buf, char* mail);
 static void auth_msg(char* buf);
 
 static const char* valid_commands[] = { HELO_VERB,  EHLO_VERB,  MAIL_VERB, RCPT_VERB, DATA_VERB,
-	                                    XFROM_VERB, XAUTH_VERB, XGET_VERB, XQUIT_VERB };
+	                                    XFROM_VERB, XAUTH_VERB, XGET_VERB, XQUIT_VERB, XTRAN_VERB };
 
 bool
 handle_reset(struct selector_key* key, char* msg)
@@ -251,8 +251,6 @@ handle_data(struct selector_key* key, char* msg)
 	}
 	ok_data(msg);
 
-	
-
 	// acá vamos a querer crear un socke
 
 	return BODY;
@@ -295,6 +293,10 @@ handle_xfrom(struct selector_key* key, char* msg)
 	smtp_data* data = ATTACHMENT(key);
 	char* verb = data->request.verb;
 
+	if (strcasecmp(verb, XTRAN_VERB) == 0) {
+		return handle_xtran(key, msg);
+	}
+
 	if (!is_valid(verb, XFROM_VERB, msg)) {
 		return XFROM;
 	}
@@ -312,6 +314,33 @@ handle_xfrom(struct selector_key* key, char* msg)
 
 	return XGET;
 }
+smtp_state
+handle_xtran(struct selector_key* key, char* msg)
+{
+	smtp_data* data = ATTACHMENT(key);
+	char* verb = data->request.verb;
+
+	if (!is_valid(verb, XTRAN_VERB, msg)) {
+		return XFROM;
+	}
+
+	
+
+	char* arg = data->request.arg;
+
+	if(strcasecmp(arg, "OFF") == 0){
+		ok(msg, "XTRAN OFF");
+		set_status(false);
+	}
+	if(strcasecmp(arg, "ON") == 0){
+		ok(msg, "XTRAN ON");
+		set_status(true);
+		
+	}
+
+	return XFROM;
+}
+
 smtp_state
 handle_xget(struct selector_key* key, char* msg)
 {

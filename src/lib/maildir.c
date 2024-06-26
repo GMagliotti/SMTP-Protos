@@ -110,13 +110,8 @@ create_temp_mail_file(char* email, char* copy_addr)
 }
 
 void
-copy_temp_to_new_single(char* email, char* temp_file_name)
+copy_temp_to_new_single(char* email, int temp_file_fd, char* temp_file_name)
 {
-
-
-
-
-
 	// we copy the mail from mail/<domain>/<user>/tmp/<timestamp> to mail/<domain>/<rcpt_to>/new/<timestamp>
 	// we need to create the new dir if it doesn't exist
 	logf(LOG_DEBUG, "Copying temp file (fd=%d) to new for email %s", temp_file_fd, email);
@@ -145,6 +140,7 @@ copy_temp_to_new_single(char* email, char* temp_file_name)
 
 	free(email_dup);
 	free(maildir_path);
+
 
 	char buffer[1024] = { 0 };
 

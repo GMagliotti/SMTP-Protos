@@ -4,9 +4,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 
-#define DATA_SIZE 1024
-#define INITIAL_REQUEST_DATA_SIZE 1024
-#define MAX_REQUEST_DATA_SIZE 1048576
+#define DATA_SIZE 4097
 enum request_state
 {
 	request_verb,

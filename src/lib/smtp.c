@@ -79,18 +79,7 @@ Cada estado va a tener un handlers que hay que definir
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
 #define MAIL_DIR_SIZE          4
 
-char* welcome_message = "220 local ESMTP Postfix (Ubuntu)\n"
-                        "\nComandos SMTP\n"
-                        "EHLO <user>\n"
-                        "MAIL FROM:<user@local>\n"
-                        "RCPTO TO:<other_user@local>\n\n"
-                        "Comandos ESMTP\n"
-                        "XAUTH token\n"
-                        "XFROM <local_user>\n"
-                        "XGET ALL\n"
-                        "XGET dd/mm/yyyy\n"
-                        "XALL <local_user>\n"
-                        "XQUIT\n\n";
+char* welcome_message = "220 local ESMTP Postfix (Ubuntu)\n";
 
 typedef enum request_state (*state_handler)(const uint8_t c, struct request_parser* p);
 const fd_handler* get_smtp_handler(void);
@@ -159,7 +148,7 @@ static const struct state_definition states_handlers[] = { {
 
 process_handler handlers_table[] = {
 	[EHLO] = handle_helo, [FROM] = handle_from,   [TO] = handle_to,       [DATA] = handle_data, [BODY] = handle_body,
-	[ERROR] = NULL,       [XAUTH] = handle_xauth, [XFROM] = handle_xfrom, [XGET] = handle_xget
+	[ERROR] = NULL,       [XAUTH] = handle_xauth, [XFROM] = handle_xfrom, [XGET] = handle_xget, [XTRAN] = handle_xtran,
 };
 
 consume_handler consumers_table[] = { [REQUEST_READ] = request_consume,
@@ -180,6 +169,11 @@ init_status(char* program)
 {
 	config.program = program;
 	config.transform = program != NULL ? true : false;
+}
+void
+set_status(bool value)
+{
+	config.transform = value;
 }
 
 static void
@@ -281,6 +275,8 @@ smtp_passive_accept(selector_key* key)
 	data->stm.max_state = REQUEST_ERROR;
 	data->stm.states = states_handlers;
 	data->rcpt_qty = 0;
+	data->is_body = false;
+
 	buffer_init(&data->read_buffer, N(data->raw_buff_read), data->raw_buff_read);
 	buffer_init(&data->write_buffer, N(data->raw_buff_write), data->raw_buff_write);
 
@@ -404,7 +400,7 @@ request_actual_read(struct selector_key* key)
 	smtp_data* data = ATTACHMENT(key);
 	socket_state ret = data->stm.current->state;
 
-	bool error;
+	bool error = false;
 
 	consume_handler consumer = consumers_table[data->stm.current->state];
 
@@ -413,7 +409,6 @@ request_actual_read(struct selector_key* key)
 	if (data->stm.current->state == REQUEST_DATA) {
 		if (SELECTOR_SUCCESS == selector_set_interest_key(key, OP_NOOP)) {
 			if (SELECTOR_SUCCESS == selector_set_interest(key->s, data->output_fd, OP_WRITE)) {
-				strcpy((char*)data->data, (char*)data->request_parser.request->data);
 				ret = REQUEST_DATA_WRITE;
 			} else
 				ret = REQUEST_ERROR;
@@ -551,56 +546,61 @@ request_data_init(unsigned int state, struct selector_key* key)
 	data->request_parser.request = &data->request;
 	data->request_parser.output_fd = &data->output_fd;
 	request_parser_data_init(&data->request_parser);
-	data->is_body = false;
 
-	int file = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
+	if (!data->is_body) {
+		int file = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
 
-	if (config.transform) {
-		int pipe_fd[2];
-		if (pipe(pipe_fd) != 0) {
-			perror("Error while creating pipe");
-			exit(EXIT_FAILURE);
+		if (config.transform) {
+			int pipe_fd[2];
+			if (pipe(pipe_fd) != 0) {
+				perror("Error while creating pipe");
+				exit(EXIT_FAILURE);
+			}
+
+			int pid = fork();
+			if (pid < 0) {
+				perror("Error while creating slave");
+				exit(EXIT_FAILURE);
+			}
+
+			if (pid == 0) {  // Child process
+				close(STDIN_FILENO);
+				dup2(pipe_fd[0], STDIN_FILENO);  // Correctly duplicate to stdin
+				close(STDOUT_FILENO);
+				dup2(file, STDOUT_FILENO);  // Correctly duplicate to stdout
+
+				close(pipe_fd[0]);
+				close(pipe_fd[1]);
+				close(file);
+
+				execlp(config.program, config.program, (char*)NULL);
+				perror("Error while executing transformation program");
+				exit(EXIT_FAILURE);
+			}
+
+			// Parent process
+			close(pipe_fd[0]);             // Close read end, not used by parent
+			close(file);                   // Close file, as it's now handled by child
+			data->output_fd = pipe_fd[1];  // Use write end of the pipe to write data
+		} else {
+			data->output_fd = file;
 		}
 
-		int pid = fork();
-		if (pid < 0) {
-			perror("Error while creating slave");
-			exit(EXIT_FAILURE);
+		// Escribir la información del remitente
+		dprintf(data->output_fd, "MAIL FROM: <%s>\r\n", data->mail_from);
+
+		// Escribir la información de los destinatarios
+		for (size_t i = 0; i < data->rcpt_qty; i++) {
+			dprintf(data->output_fd, "RCPT TO: <%s>\r\n", data->rcpt_to[i]);
 		}
+		dprintf(file, "DATA\r\n");
 
-		if (pid == 0) {  // Child process
-			close(STDIN_FILENO);
-			dup2(pipe_fd[0], STDIN_FILENO);  // Correctly duplicate to stdin
-			close(STDOUT_FILENO);
-			dup2(file, STDOUT_FILENO);  // Correctly duplicate to stdout
+		selector_register(key->s, data->output_fd, &file_handler, OP_NOOP, data);
 
-			close(pipe_fd[0]);
-			close(pipe_fd[1]);
-			close(file);
-
-			execlp(config.program, config.program, (char*)NULL);
-			perror("Error while executing transformation program");
-			exit(EXIT_FAILURE);
-		}
-
-		// Parent process
-		close(pipe_fd[0]);             // Close read end, not used by parent
-		close(file);                   // Close file, as it's now handled by child
-		data->output_fd = pipe_fd[1];  // Use write end of the pipe to write data
-	} else {
-		data->output_fd = file;
+		data->is_body= true;
 	}
 
-	// Escribir la información del remitente
-	dprintf(data->output_fd, "MAIL FROM: <%s>\r\n", data->mail_from);
-
-	// Escribir la información de los destinatarios
-	for (size_t i = 0; i < data->rcpt_qty; i++) {
-		dprintf(data->output_fd, "RCPT TO: <%s>\r\n", data->rcpt_to[i]);
-	}
-	dprintf(file, "DATA\r\n");
-
-	selector_register(key->s, data->output_fd, &file_handler, OP_NOOP, data);
+	
 }
 
 void
@@ -624,7 +624,7 @@ write_file_handler(struct selector_key* key)
 	socket_state ret = REQUEST_DATA_WRITE;
 	smtp_data* data = ATTACHMENT(key);
 
-	char* data_buffer = (char*)data->data;
+	char* data_buffer = (char*)data->request.data;
 	size_t count = strlen(data_buffer);
 	ssize_t n = write(data->output_fd, data_buffer, count);
 
@@ -646,16 +646,18 @@ write_file_handler(struct selector_key* key)
 			return REQUEST_ERROR;
 		}
 
+		if (SELECTOR_SUCCESS != selector_unregister_fd(key->s, data->output_fd))
+			return REQUEST_ERROR;
+		
+		
 		close(data->output_fd);
 
 		// rename  rcpt file
 
-		if (SELECTOR_SUCCESS != selector_unregister_fd(key->s, data->output_fd))
-			return REQUEST_ERROR;
 
 		data->output_fd = 0;
-		clean_request(key);
 
+		clean_request(key);
 		// Procesamiento
 		return request_process(key);
 
@@ -696,7 +698,8 @@ clean_request(struct selector_key* key)
 {
 	smtp_data* data = ATTACHMENT(key);
 	// close(data->output_fd);
-	// free(data->request.data); // freeing the data buffer
+	//  free(data->request.data); // freeing the data buffer
+	memset(&data->is_body, 0, sizeof((data->is_body)));
 	memset(&data->request, 0, sizeof((data->request)));
 	memset(&data->mail_from, 0, sizeof((data->mail_from)));
 	memset(&data->rcpt_to, 0, sizeof((data->rcpt_to)));

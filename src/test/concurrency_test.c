@@ -49,6 +49,7 @@ send_email(void* threadid)
     buffer[n] = '\0'; // Null-terminate the received string
     // random sleep
     
+    sleep(rand() % 4);
 
 
 	// sleep(rand() % 1);
@@ -63,7 +64,8 @@ send_email(void* threadid)
 	                            "Subject: Test Email\r\n"
 	                            "\r\n"
 	                            "This is a test email.\r\n"
-	                            ".\r\n";
+	                            ".\r\n"
+								;
 
 	// Send the entire email message in one send
 	if (send(sockfd, email_message, strlen(email_message), 0) < 0) {

@@ -87,7 +87,7 @@ main(const int argc, const char** argv)
 		init_status(command);
 
 	} else {
-		init_status("/usr/bin/tac");
+		init_status(NULL);
 	}
 
 	// no tenemos nada que leer de stdin

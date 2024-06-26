@@ -17,6 +17,7 @@
 #define NOOP_VERB   "NOOP"
 #define XAUTH_VERB  "XAUTH"
 #define XFROM_VERB  "XFROM"
+#define XTRAN_VERB  "XTRAN"
 #define XGET_VERB   "XGET"
 #define XGET_ALL    "ALL"
 #define XQUIT_VERB  "XQUIT"
@@ -38,6 +39,8 @@ bool handle_quit(struct selector_key* key, char* msg);
 bool handle_xquit(struct selector_key* key, char* msg);
 
 smtp_state handle_xauth(struct selector_key* key, char* msg);
+smtp_state handle_xtran(struct selector_key* key, char* msg);
+
 smtp_state handle_xfrom(struct selector_key* key, char* msg);
 smtp_state handle_xget(struct selector_key* key, char* msg);
 

@@ -88,4 +88,6 @@ void smtp_done(selector_key* key);
 
 void smtp_passive_accept(selector_key* key);
 void init_status(char* program);
+void set_status(bool value);
+
 #endif
