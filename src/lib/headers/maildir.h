@@ -8,10 +8,17 @@
 #include <sys/stat.h>
 #include <string.h>
 #define MAIL_FILE_NAME_LENGTH 24
+#define MAIL_DIR_SIZE          7
+#define DOMAIN_NAME_SIZE       255
+#define LOCAL_USER_NAME_SIZE   64
+#define MAILBOX_INNER_DIR_SIZE 3  // tmp, new, cur
+#define MS_TEXT_SIZE           13
+#define MAIL_FILE_NAME_LENGTH  24
+#define RAND_STR_LENGTH        10
 
 char * create_maildir(char * user);
 
-int create_temp_mail_file(char* email, char * copy_addr);
+int create_temp_mail_file(char* email, char * copy_addr, char * copy_addr_path);
 
 /**
  * @brief Gets the maildir path for a given email.
@@ -45,7 +52,7 @@ char* create_maildir(char* email);
  */
 int get_temp_file_fd(char * email, char * copy_addr);
 
-void copy_temp_to_new_single(char* email, int temp_file_fd, char* temp_file_name);
+void copy_temp_to_new_single(char* email, char* temp_file_name, char * temp_file_full_path);
 
 /**
  * @brief Copy the contents of the temporary file to each recipient's maildir. 

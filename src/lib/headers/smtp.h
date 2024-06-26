@@ -42,6 +42,7 @@ typedef struct smtp_data
 
 	int output_fd;  // file descriptor for the output file
 	char filename_fd[MAIL_FILE_NAME_LENGTH];
+	char temp_full_path[MAIL_DIR_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 + MAIL_FILE_NAME_LENGTH + 1];
 
 	// parser
 	smtp_state state;

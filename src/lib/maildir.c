@@ -3,13 +3,8 @@
 #include "smtp.h"
 
 #include <sys/stat.h>
-#define MAIL_DIR_SIZE          7
-#define DOMAIN_NAME_SIZE       255
-#define LOCAL_USER_NAME_SIZE   64
-#define MAILBOX_INNER_DIR_SIZE 3  // tmp, new, cur
-#define MS_TEXT_SIZE           13
-#define MAIL_FILE_NAME_LENGTH  24
-#define RAND_STR_LENGTH        10
+#include <sys/sendfile.h>
+
 
 static char*
 rand_str(char* dest, size_t length)
@@ -85,7 +80,7 @@ finalize:
 }
 
 int
-create_temp_mail_file(char* email, char* copy_addr)
+create_temp_mail_file(char* email, char* copy_addr, char * copy_addr_path)
 {
 	char* email_dup = strdup(email);
 	char* name = strtok(email_dup, "@");
@@ -93,16 +88,18 @@ create_temp_mail_file(char* email, char* copy_addr)
 	if (maildir_path == NULL) {
 		logf(LOG_ERROR, "Error creating maildir for %s", email);
 	}
-	strcat(maildir_path, "/tmp");
-	strncat(maildir_path, copy_addr, MAIL_FILE_NAME_LENGTH);
 
 	if (copy_addr[0] == '\0') {
 		char random[RAND_STR_LENGTH + 1];
 		rand_str(random, RAND_STR_LENGTH);
 		snprintf(copy_addr, MAIL_FILE_NAME_LENGTH, "%lu_%s", time(NULL), random);
 	}
-	strcat(maildir_path, "/");
+	strcat(maildir_path, "/tmp/");
 	strncat(maildir_path, copy_addr, MAIL_FILE_NAME_LENGTH);
+	if (copy_addr_path[0] == '\0') {
+		snprintf(copy_addr_path, MAIL_DIR_SIZE + 1 + DOMAIN_NAME_SIZE + 1 + LOCAL_USER_NAME_SIZE + 1 + MAILBOX_INNER_DIR_SIZE + 1 + MAIL_FILE_NAME_LENGTH + 1, "%s", maildir_path);
+	}
+
 	int fd = open(maildir_path, O_CREAT | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
 	free(email_dup);
 	free(maildir_path);
@@ -110,11 +107,11 @@ create_temp_mail_file(char* email, char* copy_addr)
 }
 
 void
-copy_temp_to_new_single(char* email, int temp_file_fd, char* temp_file_name)
+copy_temp_to_new_single(char* email, char* temp_file_name, char * temp_file_full_path)
 {
 	// we copy the mail from mail/<domain>/<user>/tmp/<timestamp> to mail/<domain>/<rcpt_to>/new/<timestamp>
 	// we need to create the new dir if it doesn't exist
-	logf(LOG_DEBUG, "Copying temp file (fd=%d) to new for email %s", temp_file_fd, email);
+	logf(LOG_DEBUG, "Copying temp file (path=%s) to new for email %s", temp_file_full_path, email);
 	char* email_dup = strdup(email);
 	char* name = strtok(email_dup, "@");
 	char* maildir_path = create_maildir(name);
@@ -125,8 +122,7 @@ copy_temp_to_new_single(char* email, int temp_file_fd, char* temp_file_name)
 		free(email_dup);
 		return;
 	}
-	strcat(maildir_path, "/new");
-	strcat(maildir_path, "/");
+	strcat(maildir_path, "/new/");
 	strncat(maildir_path, temp_file_name, MAIL_FILE_NAME_LENGTH);
 
 	int new_fd = open(maildir_path, O_CREAT | O_WRONLY, S_IRWXU | S_IRWXG | S_IRWXO);
@@ -142,29 +138,40 @@ copy_temp_to_new_single(char* email, int temp_file_fd, char* temp_file_name)
 	free(maildir_path);
 
 
-	char buffer[1024] = { 0 };
 
-	ssize_t bytes_read = 0;
-	lseek(
-	    temp_file_fd, 0, SEEK_SET);  // we need to go to the beginning of the file because we have already written to it
+	//char buffer[1024] = { 0 };
+
+	//ssize_t bytes_read = 0;
+	int temp_file_fd = open(temp_file_full_path, O_RDWR);
+	if (temp_file_fd < 0) {
+		logf(LOG_ERROR, "Error opening temp mail file for %s (fd=%d)", email, temp_file_fd);
+		perror("open");
+		return;
+	}
+
+	if (sendfile(new_fd, temp_file_fd, 0, INT32_MAX) == -1) {
+		logf(LOG_ERROR, "Error copying temp mail file to new for %s", email);
+		perror("sendfile");
+		return;
+	} 
 
 	// This while loop is provisional. We need to read the whole file and apply the transformation if there is any
 	// The reason for doing it as a while loop is because we haven't implemented transformations yet
 
-	while ((bytes_read = read(temp_file_fd, buffer, sizeof(buffer))) > 0) {
-		ssize_t bytes_written = write(new_fd, buffer, bytes_read);
-		if (bytes_written < 0) {
-			logf(LOG_ERROR, "Error writing to new mail file for %s (fd=%d)", email, new_fd);
-			perror("write");
-			return;
-		}
-	}
+	// while ((bytes_read = read(temp_file_fd, buffer, sizeof(buffer))) > 0) {
+	// 	ssize_t bytes_written = write(new_fd, buffer, bytes_read);
+	// 	if (bytes_written < 0) {
+	// 		logf(LOG_ERROR, "Error writing to new mail file for %s (fd=%d)", email, new_fd);
+	// 		perror("write");
+	// 		return;
+	// 	}
+	// }
 
-	if (bytes_read < 0) {
-		logf(LOG_ERROR, "Error reading from temp mail file (fd=%d)", temp_file_fd);
-		perror("read");
-		return;
-	}
+	// if (bytes_read < 0) {
+	// 	logf(LOG_ERROR, "Error reading from temp mail file (fd=%d)", temp_file_fd);
+	// 	perror("read");
+	// 	return;
+	// }
 
 	if (close(new_fd) != 0) {
 		logf(LOG_ERROR, "Error closing new mail file (fd=%d)", new_fd);

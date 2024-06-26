@@ -77,7 +77,6 @@ Cada estado va a tener un handlers que hay que definir
 
 #define MS_TEXT_SIZE           13
 #define MAILBOX_INNER_DIR_SIZE 3  // cur, new, tmp (3)
-#define MAIL_DIR_SIZE          4
 
 char* welcome_message = "220 local ESMTP Postfix (Ubuntu)\n";
 
@@ -547,8 +546,7 @@ request_data_init(unsigned int state, struct selector_key* key)
 	data->request_parser.output_fd = &data->output_fd;
 	request_parser_data_init(&data->request_parser);
 
-	if (!data->is_body) {
-		int file = create_temp_mail_file((char*)data->mail_from, data->filename_fd);
+	int file = create_temp_mail_file((char*)data->rcpt_to[0], data->filename_fd, data->temp_full_path);
 
 		if (config.transform) {
 			int pipe_fd[2];
@@ -598,9 +596,6 @@ request_data_init(unsigned int state, struct selector_key* key)
 		selector_register(key->s, data->output_fd, &file_handler, OP_NOOP, data);
 
 		data->is_body= true;
-	}
-
-	
 }
 
 void
@@ -638,7 +633,7 @@ write_file_handler(struct selector_key* key)
 
 	if (data->request_parser.state == request_done) {
 		for (size_t i = 0; i < data->rcpt_qty; i++) {
-			copy_temp_to_new_single((char*)data->rcpt_to[i], data->output_fd, data->filename_fd);
+			copy_temp_to_new_single((char*)data->rcpt_to[i], data->filename_fd, data->temp_full_path);
 			time_t now = time(NULL);
 			register_mail((char*)data->mail_from, (char*)data->rcpt_to[i], data->filename_fd, now);
 		}
